@@ -16,15 +16,9 @@ fi
 echo "→ Installing Python packages..."
 pip3 install --user celery[redis] redis
 
-# Clone relayq repo
+# Install relayq directly from GitHub
 echo "→ Installing relayq..."
-TEMP_DIR=$(mktemp -d)
-cd "$TEMP_DIR"
-git clone https://github.com/Khamel83/relayq.git
-cd relayq
-pip3 install --user -e .
-cd ~
-rm -rf "$TEMP_DIR"
+pip3 install --user git+https://github.com/Khamel83/relayq.git
 
 # Create config directory
 mkdir -p ~/.relayq
@@ -51,67 +45,21 @@ echo "✓ Configuration created at ~/.relayq/config.yml"
 # Create log file
 touch ~/.relayq/worker.log
 
-# Create LaunchAgent
-echo "→ Creating worker service..."
-mkdir -p ~/Library/LaunchAgents
-
-cat > ~/Library/LaunchAgents/com.user.relayq.worker.plist << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.user.relayq.worker</string>
-
-    <key>ProgramArguments</key>
-    <array>
-        <string>/usr/bin/nice</string>
-        <string>-n</string>
-        <string>19</string>
-        <string>$(which python3)</string>
-        <string>-m</string>
-        <string>celery</string>
-        <string>-A</string>
-        <string>relayq.tasks</string>
-        <string>worker</string>
-        <string>--loglevel=info</string>
-        <string>--concurrency=2</string>
-        <string>--hostname=macmini@%h</string>
-    </array>
-
-    <key>RunAtLoad</key>
-    <true/>
-
-    <key>KeepAlive</key>
-    <true/>
-
-    <key>StandardOutPath</key>
-    <string>$HOME/.relayq/worker.log</string>
-
-    <key>StandardErrorPath</key>
-    <string>$HOME/.relayq/worker.error.log</string>
-
-    <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
-    </dict>
-</dict>
-</plist>
-EOF
-
-echo "✓ LaunchAgent created"
-
-# Load the worker service
+# Start worker directly (LaunchAgent approach has issues)
 echo "→ Starting worker..."
-launchctl load ~/Library/LaunchAgents/com.user.relayq.worker.plist
+
+# Kill any existing worker
+pkill -f "celery.*relayq.tasks" 2>/dev/null || true
+
+# Start worker with nohup (survives terminal close)
+nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 > ~/.relayq/worker.log 2>&1 &
 
 # Wait a moment for worker to start
 sleep 3
 
 # Check if running
-if launchctl list | grep -q "com.user.relayq.worker"; then
-    echo "✓ Worker service running"
+if pgrep -f "celery.*relayq.tasks" > /dev/null; then
+    echo "✓ Worker running in background"
 else
     echo "✗ Worker failed to start"
     echo "Check logs: tail ~/.relayq/worker.log"
@@ -122,7 +70,11 @@ echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "Worker installed on Mac Mini"
-echo "Running at low priority (won't affect Plex)"
+echo "Running in background (survives terminal close)"
 echo "Logs: ~/.relayq/worker.log"
 echo ""
-echo "Next: Run test-relayq.sh on OCI VM to verify"
+echo "To restart after reboot:"
+echo "nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 > ~/.relayq/worker.log 2>&1 &"
+echo ""
+echo "Next: Test from OCI VM with:"
+echo "python3 -c \"from relayq import job; print(job.run('echo test').get())\""

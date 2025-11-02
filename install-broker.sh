@@ -24,6 +24,9 @@ sudo apt install -y redis-server
 echo "→ Configuring Redis..."
 sudo sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
 
+# Allow external connections (disable protected mode)
+sudo sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
+
 # Allow connections from Mac Mini (Tailscale IP)
 sudo sed -i 's/^bind 127.0.0.1/bind 127.0.0.1 100.103.45.61/' /etc/redis/redis.conf
 
@@ -42,17 +45,11 @@ fi
 
 # Install Python dependencies
 echo "→ Installing Python packages..."
-pip3 install --user celery[redis] redis
+pip3 install --user --break-system-packages celery[redis] redis
 
-# Clone relayq repo
+# Install relayq directly from GitHub
 echo "→ Installing relayq..."
-TEMP_DIR=$(mktemp -d)
-cd "$TEMP_DIR"
-git clone https://github.com/Khamel83/relayq.git
-cd relayq
-pip3 install --user -e .
-cd ~
-rm -rf "$TEMP_DIR"
+pip3 install --user --break-system-packages git+https://github.com/Khamel83/relayq.git
 
 # Create config directory
 mkdir -p ~/.relayq
