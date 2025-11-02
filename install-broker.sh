@@ -27,13 +27,14 @@ sudo sed -i 's/^supervised no/supervised systemd/' /etc/redis/redis.conf
 # Allow external connections (disable protected mode)
 sudo sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf
 
-# Allow connections from Mac Mini (Tailscale IP)
-sudo sed -i 's/^bind 127.0.0.1/bind 127.0.0.1 100.103.45.61/' /etc/redis/redis.conf
+# Allow connections from Mac Mini (Tailscale IP) - avoid duplicates
+if ! grep -q "100.103.45.61" /etc/redis/redis.conf; then
+    sudo sed -i 's/^bind 127.0.0.1.*/bind 127.0.0.1 100.103.45.61 -::1/' /etc/redis/redis.conf
+fi
 
-# Start and enable Redis
+# Start Redis manually (systemd service has issues)
 echo "→ Starting Redis..."
-sudo systemctl restart redis
-sudo systemctl enable redis
+sudo redis-server /etc/redis/redis.conf --daemonize yes
 
 # Test Redis
 if redis-cli ping | grep -q "PONG"; then
