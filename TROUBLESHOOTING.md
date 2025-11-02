@@ -2,24 +2,38 @@
 
 When something breaks.
 
+## Problem: Connection Refused Error
+
+**Most common issue: Redis stopped on OCI VM**
+
+Error message:
+```
+kombu.exceptions.OperationalError: Error 111 connecting to 127.0.0.1:6379. Connection refused.
+```
+
+**Fix on OCI VM:**
+```bash
+sudo redis-server /etc/redis/redis.conf --daemonize yes
+```
+
+**Test if fixed:**
+```bash
+python3 -c "from relayq import job; print(job.run('echo test').get())"
+```
+
 ## Problem: Jobs Not Running
 
-**Check if worker is online:**
+**Check if worker is running on Mac Mini:**
 
 SSH to Mac Mini:
 ```bash
 ssh macmini
-launchctl list | grep relayq
+pgrep -f "celery.*relayq"
 ```
 
-Should show:
-```
-12345  0  com.user.relayq.worker
-```
-
-If not there:
+Should show a process ID. If not:
 ```bash
-launchctl load ~/Library/LaunchAgents/com.user.relayq.worker.plist
+nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 > ~/.relayq/worker.log 2>&1 &
 ```
 
 **Check worker logs:**

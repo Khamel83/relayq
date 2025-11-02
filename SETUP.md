@@ -1,6 +1,6 @@
 # Setup Guide
 
-Run these commands **once** to install relayq.
+**Two single commands to get relayq working.**
 
 ## Prerequisites
 
@@ -9,76 +9,65 @@ Run these commands **once** to install relayq.
 
 ## Step 1: Install on OCI VM (Broker)
 
-SSH into your OCI VM:
+SSH into your OCI VM and run:
 ```bash
-ssh oci-dev
-```
-
-Download and run the broker installer:
-```bash
-curl -o install-broker.sh https://raw.githubusercontent.com/Khamel83/relayq/main/install-broker.sh
-chmod +x install-broker.sh
-./install-broker.sh
+curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-broker.sh | bash
 ```
 
 **What this does:**
-- Installs Redis
-- Configures Redis to start on boot
+- Installs and configures Redis
 - Installs relayq Python package
-- Creates config file
+- Creates config files
+- Sets up firewall rules
 
 **Expected output:**
 ```
-✓ Redis installed
-✓ Redis running on 127.0.0.1:6379
-✓ relayq installed
-✓ Setup complete
+=== Installing relayq Broker on OCI VM ===
+→ Updating package list...
+→ Installing Redis...
+→ Configuring Redis...
+→ Starting Redis...
+✓ Redis installed and running
+→ Installing Python packages...
+→ Installing relayq...
+✓ Configuration created at ~/.relayq/config.yml
+→ Configuring firewall...
+=== Installation Complete ===
 ```
 
 ## Step 2: Install on Mac Mini (Worker)
 
-SSH into your Mac Mini:
+SSH into your Mac Mini and run:
 ```bash
-ssh macmini
-```
-
-Download and run the worker installer:
-```bash
-curl -o install-worker.sh https://raw.githubusercontent.com/Khamel83/relayq/main/install-worker.sh
-chmod +x install-worker.sh
-./install-worker.sh
+curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-worker.sh | bash
 ```
 
 **What this does:**
 - Installs relayq Python package
-- Creates worker service (low priority)
-- Configures worker to start on boot
+- Creates background worker (low priority)
 - Sets up logging
 
 **Expected output:**
 ```
-✓ relayq installed
-✓ Worker service created
-✓ Worker running (low priority)
-✓ Setup complete
+=== Installing relayq Worker on Mac Mini ===
+→ Installing Python packages...
+→ Installing relayq...
+✓ Configuration created at ~/.relayq/config.yml
+→ Starting worker...
+✓ Worker running in background
+=== Installation Complete ===
 ```
 
 ## Step 3: Test It
 
-On OCI VM, run the test script:
+On OCI VM, test the connection:
 ```bash
-curl -o test-relayq.sh https://raw.githubusercontent.com/Khamel83/relayq/main/test-relayq.sh
-chmod +x test-relayq.sh
-./test-relayq.sh
+python3 -c "from relayq import job; print(job.run('echo \"SUCCESS! relayq is working\"').get())"
 ```
 
 **Expected output:**
 ```
-✓ Redis responding
-✓ Worker connected
-✓ Test job submitted
-✓ Test job completed
-✓ relayq is working!
+SUCCESS! relayq is working
 ```
 
 ## Troubleshooting

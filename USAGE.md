@@ -1,33 +1,43 @@
 # Usage Guide
 
-How to use relayq in your projects.
+How to use relayq in your projects on the OCI VM.
 
-## Install in Project
+## ✅ Tested Basic Usage
 
-Add to your `requirements.txt`:
-```
-relayq
-```
-
-Or install directly:
-```bash
-pip install git+https://github.com/Khamel83/relayq.git
-```
-
-## Basic Usage
+relayq is already installed on your OCI VM. Just import and use:
 
 ```python
 from relayq import job
 
-# Transcode video (runs on Mac Mini)
-result = job.transcode("input.mp4", output="output.mp4")
+# Test connectivity (verified working)
+result = job.run("echo 'Hello from Mac Mini'")
+print(result.get())  # Output: Hello from Mac Mini
 
-# Wait for completion
-result.wait()
+# Run any command on Mac Mini
+result = job.run("uname -a")
+output = result.get()
+print(output)  # Shows Mac Mini system info
+```
 
-# Or check status
-if result.ready():
-    print("Done!")
+## Install in New Projects
+
+If you're working on a different machine or need to install elsewhere:
+```bash
+pip3 install --user git+https://github.com/Khamel83/relayq.git
+```
+
+## Core Operations
+
+### Basic Command Execution
+```python
+from relayq import job
+
+# Simple command
+result = job.run("ls -la")
+output = result.get()
+
+# Command with working directory
+result = job.run("make build", cwd="/path/to/project")
 ```
 
 ## Common Operations

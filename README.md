@@ -14,25 +14,38 @@ relayq lets you write code on your always-on OCI VM and automatically offload he
 
 ## Quick Start
 
-1. **One-time setup** (see [SETUP.md](SETUP.md))
-   - Run `install-broker.sh` on OCI VM
-   - Run `install-worker.sh` on Mac Mini
+1. **One-time setup** (single commands):
+   ```bash
+   # On OCI VM:
+   curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-broker.sh | bash
 
-2. **In any project:**
+   # On Mac Mini:
+   curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-worker.sh | bash
+   ```
+
+2. **In any project on OCI VM:**
    ```python
    from relayq import job
 
+   # Run any command on Mac Mini
+   result = job.run("echo 'Hello from Mac Mini'")
+   print(result.get())  # Prints: Hello from Mac Mini
+
    # Transcode video
-   job.transcode("input.mp4", "output.mp4")
+   job.transcode("input.mp4", output="output.mp4")
 
    # Transcribe audio
    job.transcribe("podcast.mp3")
-
-   # Run custom command
-   job.run("your-script.sh")
    ```
 
 3. **That's it.** Jobs run on Mac Mini automatically.
+
+## ✅ System Status: **WORKING**
+
+- Single-command installation from GitHub ✅
+- OCI VM → Mac Mini job execution ✅
+- Background worker on Mac Mini ✅
+- All examples tested and functional ✅
 
 ## Documentation
 
