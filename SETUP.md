@@ -1,11 +1,11 @@
 # Setup Guide
 
-**Two single commands to get relayq working.**
+**Three single commands to get your compute cluster working.**
 
 ## Prerequisites
 
-- SSH access to both machines (you already have this via Tailscale)
-- Mac Mini and OCI VM on same Tailscale network
+- SSH access to all machines (you already have this via Tailscale)
+- OCI VM, Mac Mini, and RPi4 on same Tailscale network
 
 ## Step 1: Install on OCI VM (Broker)
 
@@ -58,16 +58,50 @@ curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-work
 === Installation Complete ===
 ```
 
-## Step 3: Test It
+## Step 3: Install on RPi4 (Light Worker)
 
-On OCI VM, test the connection:
+SSH into your RPi4 and run:
 ```bash
-python3 -c "from relayq import job; print(job.run('echo \"SUCCESS! relayq is working\"').get())"
+curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-worker-rpi.sh | bash
+```
+
+**What this does:**
+- Installs relayq Python package
+- Creates RPi4-optimized worker (4 concurrent jobs, low priority)
+- Auto-detects Tailscale IP
+- Sets up logging
+
+**Expected output:**
+```
+=== Installing relayq Worker on Raspberry Pi 4 ===
+→ Installing Python packages...
+→ Installing relayq...
+✓ Configuration created at ~/.relayq/config.yml
+→ Starting RPi4 worker...
+✓ RPi4 worker running in background
+=== Installation Complete ===
+```
+
+## Step 4: Test the Cluster
+
+On OCI VM, test all workers:
+```bash
+# Test auto-distribution
+python3 -c "from relayq import job, worker_status; print('Cluster:', job.run('echo SUCCESS').get()); print('Status:', worker_status())"
+
+# Test Mac Mini specifically
+python3 -c "from relayq import job; print('Mac Mini:', job.run_on_mac('echo \"Hello from Mac\"').get())"
+
+# Test RPi4 specifically
+python3 -c "from relayq import job; print('RPi4:', job.run_on_rpi('echo \"Hello from RPi\"').get())"
 ```
 
 **Expected output:**
 ```
-SUCCESS! relayq is working
+Cluster: SUCCESS
+Status: {'online': True, 'total_workers': 2, 'workers': {...}}
+Mac Mini: Hello from Mac
+RPi4: Hello from RPi
 ```
 
 ## Troubleshooting

@@ -80,10 +80,15 @@ touch ~/.relayq/broker.log
 echo "→ Configuring firewall..."
 sudo ufw allow from 100.113.216.27 to any port 6379 comment 'relayq Redis'
 
+# Setup Redis health monitoring
+echo "→ Setting up Redis auto-restart..."
+curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/setup-redis-service.sh | bash
+
 echo ""
 echo "=== Installation Complete ==="
 echo ""
 echo "Broker installed on OCI VM"
 echo "Redis running on 127.0.0.1:6379"
+echo "Redis auto-restart enabled"
 echo ""
 echo "Next: Run install-worker.sh on Mac Mini"

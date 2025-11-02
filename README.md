@@ -16,35 +16,42 @@ relayq lets you write code on your always-on OCI VM and automatically offload he
 
 1. **One-time setup** (single commands):
    ```bash
-   # On OCI VM:
+   # On OCI VM (broker):
    curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-broker.sh | bash
 
-   # On Mac Mini:
+   # On Mac Mini (high-power worker):
    curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-worker.sh | bash
+
+   # On RPi4 (light worker):
+   curl -fsSL https://raw.githubusercontent.com/Khamel83/relayq/master/install-worker-rpi.sh | bash
    ```
 
 2. **In any project on OCI VM:**
    ```python
-   from relayq import job
+   from relayq import job, worker_status
 
-   # Run any command on Mac Mini
-   result = job.run("echo 'Hello from Mac Mini'")
-   print(result.get())  # Prints: Hello from Mac Mini
+   # Auto-distributed (any available worker)
+   result = job.run("echo 'Hello from cluster'")
+   print(result.get())
 
-   # Transcode video
-   job.transcode("input.mp4", output="output.mp4")
+   # Worker-specific routing
+   job.run_on_mac("ffmpeg -i video.mp4 output.mp4")  # Heavy tasks
+   job.run_on_rpi("python monitor.py")               # Light tasks
 
-   # Transcribe audio
-   job.transcribe("podcast.mp3")
+   # Check cluster status
+   print(worker_status())
    ```
 
-3. **That's it.** Jobs run on Mac Mini automatically.
+3. **That's it.** Jobs distribute across your 3-node cluster automatically.
 
-## ✅ System Status: **WORKING**
+## ✅ System Status: **3-NODE CLUSTER READY**
 
 - Single-command installation from GitHub ✅
 - OCI VM → Mac Mini job execution ✅
-- Background worker on Mac Mini ✅
+- OCI VM → RPi4 job execution ✅
+- Auto-load balancing across workers ✅
+- Redis auto-restart reliability ✅
+- Worker-specific job routing ✅
 - All examples tested and functional ✅
 
 ## Documentation
@@ -65,13 +72,20 @@ If you're starting a new project, tell Claude: "Add relayq to this project" and 
 ## Architecture
 
 ```
-OCI VM (10.0.0.45 / 100.103.45.61)
+OCI VM (100.103.45.61)
 ├── Your Python code
-├── Redis (message broker)
-└── Celery client
+├── Redis (message broker + auto-restart)
+└── Job distribution
 
-Mac Mini (192.168.7.165 / 100.113.216.27)
-└── Celery worker (low priority, always running)
+Mac Mini (100.113.216.27)           RPi4 (Tailscale IP)
+├── High-power worker                ├── Light worker
+├── Video transcoding                ├── Monitoring scripts
+├── Heavy processing                 ├── Background tasks
+├── 2 concurrent jobs max            ├── 4 concurrent jobs max
+└── hostname: mac-mini               └── hostname: rpi4-worker
 ```
 
-Jobs flow: Your code → Redis → Mac Mini → Results back
+Jobs flow: Your code → Redis → Available worker → Results back
+- **Auto-load balancing**: Jobs go to first available worker
+- **Worker-specific**: Force jobs to specific worker types
+- **Fault tolerance**: System continues if one worker is down

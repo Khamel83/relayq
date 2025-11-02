@@ -43,14 +43,33 @@ class JobResult:
 class Job:
     """Job submission interface"""
 
-    def run(self, command, cwd=None):
-        """Run a shell command on Mac Mini"""
+    def run(self, command, cwd=None, worker=None):
+        """Run a shell command on any available worker
+
+        Args:
+            command: Shell command to run
+            cwd: Working directory (optional)
+            worker: Specific worker to target (optional)
+        """
+        kwargs = {"cwd": cwd}
+        if worker:
+            kwargs["routing_key"] = worker
+
         result = app.send_task(
             "relayq.run_command",
             args=[command],
-            kwargs={"cwd": cwd}
+            kwargs=kwargs,
+            routing_key=worker if worker else None
         )
         return JobResult(result)
+
+    def run_on_mac(self, command, cwd=None):
+        """Run command specifically on Mac Mini"""
+        return self.run(command, cwd=cwd, worker="mac-mini")
+
+    def run_on_rpi(self, command, cwd=None):
+        """Run command specifically on RPi4"""
+        return self.run(command, cwd=cwd, worker="rpi4-worker")
 
     def transcode(self, input_file, output=None, options=None):
         """Transcode video on Mac Mini"""
@@ -79,22 +98,50 @@ job = Job()
 
 
 def worker_status():
-    """Get worker status"""
+    """Get detailed multi-worker status"""
     try:
         inspect = app.control.inspect()
-        active = inspect.active()
-        scheduled = inspect.scheduled()
+        active = inspect.active() or {}
+        scheduled = inspect.scheduled() or {}
+        stats = inspect.stats() or {}
 
-        if active is None:
-            return {"online": False}
+        workers = {}
+        total_active = 0
+        total_scheduled = 0
 
-        total_active = sum(len(tasks) for tasks in active.values())
-        total_scheduled = sum(len(tasks) for tasks in (scheduled or {}).values())
+        for worker_name in active.keys():
+            worker_active = len(active.get(worker_name, []))
+            worker_scheduled = len(scheduled.get(worker_name, []))
+            worker_stats = stats.get(worker_name, {})
+
+            # Determine worker type from hostname
+            worker_type = "unknown"
+            if "mac" in worker_name.lower() or "macmini" in worker_name.lower():
+                worker_type = "mac-mini"
+            elif "rpi" in worker_name.lower():
+                worker_type = "rpi4"
+
+            workers[worker_name] = {
+                "type": worker_type,
+                "active_jobs": worker_active,
+                "queued_jobs": worker_scheduled,
+                "total_jobs": worker_stats.get("total", {}).get("relayq.run_command", 0),
+                "online": True
+            }
+
+            total_active += worker_active
+            total_scheduled += worker_scheduled
 
         return {
-            "online": True,
-            "active": total_active,
-            "queued": total_scheduled,
+            "online": len(workers) > 0,
+            "total_workers": len(workers),
+            "total_active": total_active,
+            "total_queued": total_scheduled,
+            "workers": workers
         }
-    except Exception:
-        return {"online": False}
+    except Exception as e:
+        return {
+            "online": False,
+            "error": str(e),
+            "workers": {}
+        }

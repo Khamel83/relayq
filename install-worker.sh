@@ -52,7 +52,7 @@ echo "→ Starting worker..."
 pkill -f "celery.*relayq.tasks" 2>/dev/null || true
 
 # Start worker with nohup (survives terminal close)
-nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 > ~/.relayq/worker.log 2>&1 &
+nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 --hostname=mac-mini@%h > ~/.relayq/worker.log 2>&1 &
 
 # Wait a moment for worker to start
 sleep 3
@@ -74,7 +74,7 @@ echo "Running in background (survives terminal close)"
 echo "Logs: ~/.relayq/worker.log"
 echo ""
 echo "To restart after reboot:"
-echo "nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 > ~/.relayq/worker.log 2>&1 &"
+echo "nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 --hostname=mac-mini@%h > ~/.relayq/worker.log 2>&1 &"
 echo ""
 echo "Next: Test from OCI VM with:"
 echo "python3 -c \"from relayq import job; print(job.run('echo test').get())\""

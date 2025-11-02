@@ -1,0 +1,2 @@
+[console_scripts]
+relayq-worker = relayq.worker:main
