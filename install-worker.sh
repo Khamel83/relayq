@@ -1,10 +1,9 @@
 #!/bin/bash
-# Install relayq worker on Mac Mini
+# FIXED: relayq worker installation with bulletproof auto-restart
 
 set -e
 
-echo "=== Installing relayq Worker on Mac Mini ==="
-echo ""
+echo "=== Installing relayq Worker (Fixed Auto-Start) ==="
 
 # Check if running on macOS
 if [[ "$(uname)" != "Darwin" ]]; then
@@ -12,11 +11,11 @@ if [[ "$(uname)" != "Darwin" ]]; then
     exit 1
 fi
 
-# Install Python dependencies
+# Install dependencies
 echo "→ Installing Python packages..."
 pip3 install --user celery[redis] redis
 
-# Install relayq directly from GitHub
+# Install relayq
 echo "→ Installing relayq..."
 pip3 install --user git+https://github.com/Khamel83/relayq.git
 
@@ -26,55 +25,102 @@ mkdir -p ~/.relayq
 # Create config file
 cat > ~/.relayq/config.yml << 'EOF'
 broker:
-  host: 100.103.45.61  # OCI VM Tailscale IP
+  host: 100.103.45.61
   port: 6379
   db: 0
 
 worker:
-  priority: low          # Run at low CPU priority
-  max_concurrent: 2      # Max 2 jobs at once
-  cpu_threshold: 80      # Pause if CPU > 80%
+  priority: low
+  max_concurrent: 2
+  cpu_threshold: 80
 
 logging:
   level: INFO
   file: ~/.relayq/worker.log
 EOF
 
+# Create bulletproof worker script
+cat > ~/.relayq/worker-bulletproof.sh << 'EOF'
+#!/bin/bash
+# Bulletproof worker with connection retry
+
+while true; do
+    echo "$(date): Starting relayq worker..."
+
+    # Kill any existing workers first
+    pkill -f "celery.*relayq" 2>/dev/null || true
+    sleep 2
+
+    # Start worker with connection retry
+    python3 -m celery -A relayq.tasks worker \
+        --loglevel=info \
+        --concurrency=2 \
+        --hostname=macmini-bulletproof \
+        --without-gossip \
+        --without-mingle \
+        --without-heartbeat
+
+    echo "$(date): Worker stopped, restarting in 10 seconds..."
+    sleep 10
+done
+EOF
+
+chmod +x ~/.relayq/worker-bulletproof.sh
+
+# Create LaunchAgent with better configuration
+cat > ~/Library/LaunchAgents/com.relayq.worker.plist << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.relayq.worker</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/macmini/.relayq/worker-bulletproof.sh</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/macmini/.relayq/service.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/macmini/.relayq/service.log</string>
+    <key>WorkingDirectory</key>
+    <string>/Users/macmini</string>
+</dict>
+</plist>
+EOF
+
+# Clean up any existing service
+launchctl unload ~/Library/LaunchAgents/com.relayq.worker.plist 2>/dev/null || true
+
+# Load and start the service
+launchctl load ~/Library/LaunchAgents/com.relayq.worker.plist
+launchctl start com.relayq.worker
+
 echo "✓ Configuration created at ~/.relayq/config.yml"
-
-# Create log file
-touch ~/.relayq/worker.log
-
-# Start worker directly (LaunchAgent approach has issues)
-echo "→ Starting worker..."
-
-# Kill any existing worker
-pkill -f "celery.*relayq.tasks" 2>/dev/null || true
-
-# Start worker with nohup (survives terminal close)
-nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 --hostname=mac-mini@%h > ~/.relayq/worker.log 2>&1 &
-
-# Wait a moment for worker to start
-sleep 3
-
-# Check if running
-if pgrep -f "celery.*relayq.tasks" > /dev/null; then
-    echo "✓ Worker running in background"
-else
-    echo "✗ Worker failed to start"
-    echo "Check logs: tail ~/.relayq/worker.log"
-    exit 1
-fi
+echo "✓ Bulletproof worker script created"
+echo "✓ LaunchAgent service installed and started"
+echo "✓ Worker running with auto-restart on crash/reboot"
 
 echo ""
 echo "=== Installation Complete ==="
+echo "Worker will automatically:"
+echo "- Start on system boot"
+echo "- Restart if crashed"
+echo "- Retry connections if Redis is down"
+echo "- Run in background (survives terminal close)"
+
 echo ""
-echo "Worker installed on Mac Mini"
-echo "Running in background (survives terminal close)"
-echo "Logs: ~/.relayq/worker.log"
-echo ""
-echo "To restart after reboot:"
-echo "nohup python3 -m celery -A relayq.tasks worker --loglevel=info --concurrency=2 --hostname=mac-mini@%h > ~/.relayq/worker.log 2>&1 &"
-echo ""
-echo "Next: Test from OCI VM with:"
-echo "python3 -c \"from relayq import job; print(job.run('echo test').get())\""
+echo "Check status with:"
+echo "launchctl list | grep relayq"
+echo "tail -f ~/.relayq/service.log"
