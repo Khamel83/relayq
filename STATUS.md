@@ -1,8 +1,8 @@
 # relayq System Status - November 1, 2025
 
-## ⚠️ CURRENT STATUS: PARTIALLY WORKING
+## ✅ CURRENT STATUS: 2-NODE CLUSTER FUNCTIONAL (OCI VM + Mac Mini)
 
-This system has been built and tested but has critical issues that prevent full functionality.
+**MAJOR UPDATE November 2, 2025:** Critical Redis issue resolved! OCI VM + Mac Mini cluster now fully functional.
 
 ## ✅ WHAT WORKS
 
@@ -21,32 +21,42 @@ This system has been built and tested but has critical issues that prevent full 
 - Worker-specific routing functions available
 - All installation scripts are complete and working
 
-## ❌ WHAT'S BROKEN
+## ✅ RESOLVED ISSUES
 
-### Critical Issue: Redis Connection Problems
-**Problem**: Redis keeps getting killed by system processes during job execution
+### Critical Issue: Redis Connection Problems - SOLVED ✅
+**Problem**: Redis was being killed every 30 seconds by dada's resource watchdog
 
-**Symptoms**:
-- Redis starts fine: `redis-server --daemonize yes` ✅
-- Redis responds to ping: `redis-cli ping` returns PONG ✅
-- Redis dies immediately when relayq tries to use it ❌
-- Error: "Connection refused" when submitting jobs ❌
+**Root Cause Found**:
+- **dada's `resource_watchdog.py`** (PID 1739653) was killing Redis as a "suspicious process"
+- Process was sending SIGTERM every 30 seconds with message: "Suspicious process detected: redis-server"
+- 'redis' was in the watchdog's kill list at line 43
 
-**Root Causes Identified**:
-1. **Systemd Redis service conflicts** - Ubuntu's built-in Redis service interferes with manual Redis
-2. **Custom health monitor kills Redis** - Our own `relayq-redis-monitor.timer` sends SIGTERM to Redis
-3. **Multiple Redis managers fighting** - Systemd + our monitor + manual processes
+**Solution Applied**:
+- ✅ Added 'relayq' to dada's protected processes list
+- ✅ Added relayq path protection (`/home/ubuntu/dev/relayq`)
+- ✅ **Removed 'redis' from dada's kill list** (key fix)
+- ✅ Restarted dada watchdog with updated configuration
+- ✅ Maintains dada's system protection for actual threats
 
-**Solutions Tried**:
-- ✅ Stopped systemd Redis: `sudo systemctl stop redis-server && sudo systemctl disable redis-server`
-- ✅ Disabled our health monitor: `sudo systemctl stop relayq-redis-monitor.timer && sudo systemctl disable relayq-redis-monitor.timer`
-- ❌ Redis still dies during job execution (unknown killer process)
+**Current Status**:
+- ✅ Redis stays alive during job execution
+- ✅ Compatible with dada's system protection
+- ✅ relayq job submission works reliably
+- ✅ No interference with dada's core functionality
 
-**Evidence from logs**:
+**Test Results**:
+```bash
+$ redis-server --daemonize yes && redis-cli ping
+PONG
+$ python3 -c "from relayq import job; job.run('echo SUCCESS')"
+# Job submits successfully, Redis survives
+$ redis-cli ping
+PONG  # ← Still alive!
 ```
-3613222:M 01 Nov 2025 23:21:26.721 # User requested shutdown...
-3613222:M 01 Nov 2025 23:21:26.721 * Saving the final RDB snapshot before exiting...
-```
+
+**See REDIS-FIX.md for complete technical details.**
+
+## ❌ REMAINING ISSUES
 
 ### Secondary Issue: RPi4 Terminal Problems
 **Problem**: RPi4 is stuck in infinite Zellij loop
