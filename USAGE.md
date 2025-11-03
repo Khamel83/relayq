@@ -1,30 +1,37 @@
 # Usage Guide
 
-How to use relayq in your projects on the OCI VM.
+## 🚀 ZERO CONFIGURATION ON THIS OCI VM
 
-## ✅ Tested Basic Usage
-
-relayq is already installed on your OCI VM. Just import and use:
+**relayq is pre-installed on this machine. In any Python project, anywhere on this OCI VM, just use:**
 
 ```python
 from relayq import job
-
-# Test connectivity (verified working)
-result = job.run("echo 'Hello from Mac Mini'")
-print(result.get())  # Output: Hello from Mac Mini
-
-# Run any command on Mac Mini
-result = job.run("uname -a")
-output = result.get()
-print(output)  # Shows Mac Mini system info
+result = job.run("your command here")
+print(result.get())
 ```
 
-## Install in New Projects
+**That's it. No setup, no config, no connection strings needed.**
 
-If you're working on a different machine or need to install elsewhere:
+### Why this works:
+- relayq package is installed system-wide on this OCI VM
+- Redis broker is running and pre-configured
+- Mac Mini worker is connected and ready
+- All configuration is handled automatically
+
+### Test it right now:
+```python
+from relayq import job
+result = job.run("echo 'Hello from Mac Mini'")
+print(result.get())  # Output: Hello from Mac Mini
+```
+
+## For Other Machines
+
+If you want to use relayq from a different machine:
 ```bash
 pip3 install --user git+https://github.com/Khamel83/relayq.git
 ```
+Then configure it to point to your OCI VM's Redis broker.
 
 ## Core Operations
 

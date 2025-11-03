@@ -122,17 +122,17 @@ transcript = result.get()
 
 ## Critical System Status
 
-**⚠️ Current Issues (see STATUS.md for details):**
-
-1. **Redis dies during job execution** - Primary blocker preventing functionality
-2. **RPi4 terminal stuck in Zellij loop** - Cannot access for debugging
-3. **Service conflicts** - Multiple Redis managers interfering
+**✅ Current Status: 2-NODE CLUSTER FUNCTIONAL (OCI VM + Mac Mini)**
 
 **✅ Working Components:**
+- Redis connection issue resolved (was being killed by dada's resource watchdog)
 - Installation infrastructure complete
 - Network connectivity established
 - Mac Mini worker verified functional
 - Job submission logic operational
+
+**⚠️ Known Issues (see STATUS.md for details):**
+- RPi4 terminal stuck in Zellij loop - cannot access for debugging
 
 ## Key Files for Debugging
 
@@ -145,7 +145,7 @@ transcript = result.get()
 
 ```
 relayq/
-├── __init__.py          # Package exports
+├── __init__.py          # Package exports (job, worker_status)
 ├── client.py            # User interface (Job, JobResult classes)
 ├── tasks.py             # Celery task definitions
 ├── worker.py            # Worker entry point

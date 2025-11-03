@@ -60,6 +60,7 @@ relayq lets you write code on your always-on OCI VM and automatically offload he
 - [USAGE.md](USAGE.md) - How to use in your projects
 - [EXAMPLES.md](EXAMPLES.md) - Copy-paste examples
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - When something breaks
+- [CLUSTER-SCALING.md](CLUSTER-SCALING.md) - Add more workers or backup brokers (RPi3 options)
 
 ## Future Omar
 
