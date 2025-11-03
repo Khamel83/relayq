@@ -1,0 +1,141 @@
+# RelayQ .gitignore
+
+# Environment files (never commit secrets)
+.env
+*.env
+.env.local
+.env.production
+.env.development
+
+# Configuration files with secrets
+config/secrets.yml
+**/.config/relayq/env
+**/secrets/
+
+# Node-local configuration (should exist on runners but not in repo)
+**/.config/relayq/
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+*.pid
+*.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Model files (large binary files)
+*.bin
+*.model
+*.pth
+*.pt
+/models/
+/opt/models/
+
+# Audio/video files (test files)
+*.mp3
+*.mp4
+*.wav
+*.flac
+*.m4a
+*.ogg
+*.avi
+*.mov
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# RelayQ specific
+/tmp/relayq-*
+/outputs/
+/artifacts/
+/relayq-dump.rdb
+/dump.rdb
+
+# Redis data
+redis.log
+redis-death.log
+*.rdb
+
+# Installation logs
+install-*.log
+setup-*.log
+
+# GitHub Actions artifacts
+artifacts/
+workflow-logs/
+
+# Local development
+local-config/
+dev-config/
+test-config/
+
+# Documentation build
+docs/_build/
+docs/site/
+
+# Coverage reports
+coverage/
+.coverage
+htmlcov/
+*.cover
+
+# Profiling
+*.prof
+*.profile
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Keys and certificates
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+secrets.txt

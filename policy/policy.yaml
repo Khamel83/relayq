@@ -1,0 +1,88 @@
+# RelayQ Routing Policy
+# Defines how jobs are routed to appropriate runners
+
+policy_version: "1.0"
+last_updated: "2025-11-03"
+
+routes:
+  # Audio transcription jobs
+  transcribe:
+    prefer: [macmini]           # Prefer Mac mini for performance
+    fallback: [rpi4]            # Use RPi4 if Mac unavailable
+    constraints:
+      needs_ffmpeg: true        # Requires FFmpeg for audio processing
+      max_size_mb: 1000        # Maximum file size in MB
+      min_memory_gb: 2         # Minimum RAM requirement
+      max_concurrent: 1        # Only one transcription per runner
+
+  # Text summarization jobs
+  summarize:
+    prefer: [rpi4]              # Prefer RPi4 for light tasks
+    fallback: [macmini]         # Use Mac mini if RPi unavailable
+    constraints:
+      max_size_mb: 100         # Text files are smaller
+      min_memory_gb: 1         # Lower memory requirement
+      max_concurrent: 2        # Allow concurrent summarization
+
+  # Video thumbnail generation
+  thumbnail:
+    prefer: [macmini]           # Mac mini has better video processing
+    fallback: [rpi4]            # RPi4 can handle small videos
+    constraints:
+      needs_ffmpeg: true        # Requires FFmpeg
+      max_size_mb: 200         # Smaller videos for thumbnails
+      min_memory_gb: 1         # Moderate memory needed
+      max_concurrent: 2        # Can process multiple thumbnails
+
+  # General audio processing (lighter than transcription)
+  audio_process:
+    prefer: [rpi4]              # Use efficient RPi4 first
+    fallback: [macmini]         # Mac mini as backup
+    constraints:
+      needs_ffmpeg: true        # Audio processing requires FFmpeg
+      max_size_mb: 500         # Medium file sizes
+      min_memory_gb: 1         # Moderate memory
+      max_concurrent: 3        # Can handle multiple light jobs
+
+  # Heavy batch processing
+  batch_process:
+    prefer: [macmini]           # Only Mac mini can handle heavy loads
+    fallback: []                # No fallback - too heavy for other runners
+    constraints:
+      needs_ffmpeg: true        # Likely requires media processing
+      max_size_mb: 2000        # Large files
+      min_memory_gb: 4         # High memory requirement
+      max_concurrent: 1        # Exclusive use of Mac mini
+
+# Global constraints that apply to all jobs
+global_constraints:
+  # Default timeouts for different job types
+  default_timeouts:
+    transcribe: 240        # 4 hours for large audio files
+    summarize: 30          # 30 minutes for text processing
+    thumbnail: 60          # 1 hour for video processing
+    audio_process: 120     # 2 hours for audio processing
+    batch_process: 480     # 8 hours for heavy batch jobs
+
+# Runner capabilities mapping
+runner_capabilities:
+  macmini:
+    cpu_cores: 8
+    memory_gb: 16
+    storage_gb: 512
+    supports_ffmpeg: true
+    max_concurrent_jobs: 2
+
+  rpi4:
+    cpu_cores: 4
+    memory_gb: 4
+    storage_gb: 128
+    supports_ffmpeg: true
+    max_concurrent_jobs: 2
+
+  rpi3:
+    cpu_cores: 4
+    memory_gb: 1
+    storage_gb: 32
+    supports_ffmpeg: false
+    max_concurrent_jobs: 1

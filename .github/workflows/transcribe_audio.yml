@@ -1,0 +1,171 @@
+name: Transcribe Audio (Pooled)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio file URL to transcribe'
+        required: true
+        type: string
+      backend:
+        description: 'ASR backend to use (local, openai, router)'
+        required: false
+        type: string
+        default: 'local'
+      model:
+        description: 'Whisper model to use (for local backend)'
+        required: false
+        type: string
+        default: 'base'
+
+# Pooled execution - any runner with 'audio' label can pick up
+runs-on: [self-hosted, audio]
+timeout-minutes: 240
+
+# Concurrency control - prevent resource conflicts
+concurrency:
+  group: audio-processing
+  cancel-in-progress: false
+
+env:
+  ASR_BACKEND: ${{ inputs.backend || 'local' }}
+  WHISPER_MODEL: ${{ inputs.model || 'base' }}
+
+jobs:
+  transcribe:
+    runs-on: [self-hosted, audio]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create output directory
+        run: |
+          mkdir -p /tmp/relayq-outputs
+          chmod 755 /tmp/relayq-outputs
+
+      - name: Validate input URL
+        run: |
+          if [[ -z "${{ inputs.url }}" ]]; then
+            echo "Error: URL is required"
+            exit 1
+          fi
+
+          if [[ ! "${{ inputs.url }}" =~ ^https?:// ]]; then
+            echo "Error: Invalid URL format"
+            exit 1
+          fi
+
+      - name: Download audio file
+        run: |
+          echo "Downloading audio from: ${{ inputs.url }}"
+          cd /tmp
+
+          # Extract filename from URL
+          FILENAME=$(basename "${{ inputs.url }}" | sed 's/?.*//')
+          if [[ -z "$FILENAME" ]]; then
+            FILENAME="audio-$(date +%s).mp3"
+          fi
+
+          # Download file
+          if ! curl -L -o "$FILENAME" --fail --show-error "${{ inputs.url }}"; then
+            echo "Error: Failed to download audio file"
+            exit 1
+          fi
+
+          # Verify file exists and has content
+          if [[ ! -f "$FILENAME" || ! -s "$FILENAME" ]]; then
+            echo "Error: Downloaded file is empty or missing"
+            exit 1
+          fi
+
+          echo "AUDIO_FILE=/tmp/$FILENAME" >> $GITHUB_ENV
+          echo "Downloaded: $FILENAME ($(du -h "$FILENAME" | cut -f1))"
+
+      - name: Check dependencies
+        run: |
+          # Check FFmpeg
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "Error: FFmpeg not found. Please install FFmpeg."
+            exit 1
+          fi
+
+          # Check backend-specific dependencies
+          case "${{ env.ASR_BACKEND }}" in
+            "local")
+              if ! command -v python3 &> /dev/null; then
+                echo "Warning: Python3 not found, local transcription may fail"
+              fi
+              ;;
+            "openai")
+              if [[ -z "${{ secrets.OPENAI_API_KEY }}" && -z "$OPENAI_API_KEY" ]]; then
+                echo "Error: OpenAI API key not configured"
+                exit 1
+              fi
+              ;;
+            "router")
+              if [[ -z "${{ secrets.ROUTER_API_KEY }}" && -z "$ROUTER_API_KEY" ]]; then
+                echo "Error: Router API key not configured"
+                exit 1
+              fi
+              ;;
+          esac
+
+          echo "All dependencies checked successfully"
+
+      - name: Transcribe audio
+        run: |
+          echo "Starting transcription with ${{ env.ASR_BACKEND }} backend"
+          echo "Model: ${{ env.WHISPER_MODEL }}"
+
+          # Run transcription script
+          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ env.AUDIO_FILE }}" "${{ env.ASR_BACKEND }}")
+
+          if [[ $? -ne 0 ]]; then
+            echo "Error: Transcription failed"
+            exit 1
+          fi
+
+          if [[ ! -f "$OUTPUT_FILE" || ! -s "$OUTPUT_FILE" ]]; then
+            echo "Error: Transcription output is empty or missing"
+            exit 1
+          fi
+
+          echo "TRANSCRIPT_FILE=$OUTPUT_FILE" >> $GITHUB_ENV
+          echo "Transcription completed: $OUTPUT_FILE"
+
+          # Show preview of transcript
+          echo "Transcript preview:"
+          head -10 "$OUTPUT_FILE"
+
+      - name: Upload transcript as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: transcript-${{ github.run_number }}
+          path: ${{ env.TRANSCRIPT_FILE }}
+          retention-days: 7
+
+      - name: Display transcript content
+        if: always()
+        run: |
+          if [[ -f "${{ env.TRANSCRIPT_FILE }}" ]]; then
+            echo "=== TRANSCRIPT CONTENT ==="
+            cat "${{ env.TRANSCRIPT_FILE }}"
+            echo "=== END TRANSCRIPT ==="
+            echo "Transcript length: $(wc -c < "${{ env.TRANSCRIPT_FILE }}") characters"
+          else
+            echo "No transcript file found"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up downloaded audio file
+          if [[ -f "${{ env.AUDIO_FILE }}" ]]; then
+            rm -f "${{ env.AUDIO_FILE }}"
+            echo "Cleaned up audio file"
+          fi
+
+          # Clean up old temp files (older than 1 day)
+          find /tmp -name "relayq-transcribe-*" -type d -mtime +1 -exec rm -rf {} \; 2>/dev/null || true

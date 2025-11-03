@@ -1,0 +1,229 @@
+name: Transcribe Audio (Mac mini)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio file URL to transcribe'
+        required: true
+        type: string
+      backend:
+        description: 'ASR backend to use (local, openai, router)'
+        required: false
+        type: string
+        default: 'local'
+      model:
+        description: 'Whisper model to use (for local backend)'
+        required: false
+        type: string
+        default: 'small'
+
+# Mac mini specific execution
+runs-on: [self-hosted, macmini]
+timeout-minutes: 240
+
+# Mac mini specific concurrency control
+concurrency:
+  group: macmini-transcribe
+  cancel-in-progress: false
+
+env:
+  ASR_BACKEND: ${{ inputs.backend || 'local' }}
+  WHISPER_MODEL: ${{ inputs.model || 'small' }}
+
+jobs:
+  transcribe:
+    runs-on: [self-hosted, macmini]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify Mac mini runner
+        run: |
+          echo "Running on Mac mini runner"
+          echo "Hostname: $(hostname)"
+          echo "OS: $(uname -s)"
+          echo "Architecture: $(uname -m)"
+          echo "Memory: $(sysctl -n hw.memsize | awk '{print int($1/1024/1024/1024)}')GB"
+
+          # Verify this is actually macOS
+          if [[ "$(uname)" != "Darwin" ]]; then
+            echo "Error: This workflow should only run on macOS"
+            exit 1
+          fi
+
+      - name: Create output directory
+        run: |
+          mkdir -p /tmp/relayq-outputs
+          chmod 755 /tmp/relayq-outputs
+
+      - name: Validate input URL
+        run: |
+          if [[ -z "${{ inputs.url }}" ]]; then
+            echo "Error: URL is required"
+            exit 1
+          fi
+
+          if [[ ! "${{ inputs.url }}" =~ ^https?:// ]]; then
+            echo "Error: Invalid URL format"
+            exit 1
+          fi
+
+      - name: Download audio file
+        run: |
+          echo "Downloading audio from: ${{ inputs.url }}"
+          cd /tmp
+
+          # Extract filename from URL
+          FILENAME=$(basename "${{ inputs.url }}" | sed 's/?.*//')
+          if [[ -z "$FILENAME" ]]; then
+            FILENAME="audio-$(date +%s).mp3"
+          fi
+
+          # Download file
+          if ! curl -L -o "$FILENAME" --fail --show-error "${{ inputs.url }}"; then
+            echo "Error: Failed to download audio file"
+            exit 1
+          fi
+
+          # Verify file exists and has content
+          if [[ ! -f "$FILENAME" || ! -s "$FILENAME" ]]; then
+            echo "Error: Downloaded file is empty or missing"
+            exit 1
+          fi
+
+          echo "AUDIO_FILE=/tmp/$FILENAME" >> $GITHUB_ENV
+          echo "Downloaded: $FILENAME ($(du -h "$FILENAME" | cut -f1))"
+
+          # Show file info
+          echo "File info:"
+          stat "$FILENAME"
+
+      - name: Check Mac mini dependencies
+        run: |
+          echo "Checking Mac mini dependencies..."
+
+          # Check FFmpeg
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "Error: FFmpeg not found. Please install FFmpeg with: brew install ffmpeg"
+            exit 1
+          fi
+          echo "✓ FFmpeg found: $(ffmpeg -version | head -1)"
+
+          # Check Python for local backend
+          if [[ "${{ env.ASR_BACKEND }}" == "local" ]]; then
+            if ! command -v python3 &> /dev/null; then
+              echo "Warning: Python3 not found, local transcription may fail"
+              echo "Install with: brew install python"
+            else
+              echo "✓ Python3 found: $(python3 --version)"
+            fi
+          fi
+
+          # Check available memory
+          AVAILABLE_MEM=$(vm_stat | grep "Pages free" | awk '{print $3}' | sed 's/\.//')
+          AVAILABLE_MEM_GB=$((AVAILABLE_MEM * 4096 / 1024 / 1024 / 1024))
+          echo "✓ Available memory: ${AVAILABLE_MEM_GB}GB"
+
+          if [[ $AVAILABLE_MEM_GB -lt 2 ]]; then
+            echo "Warning: Low memory available, transcription may be slow"
+          fi
+
+          echo "Mac mini dependency check completed"
+
+      - name: Configure Mac mini environment
+        run: |
+          # Set Mac mini specific environment
+          echo "OPTIMIZATION_LEVEL=high" >> $GITHUB_ENV
+
+          # For local backend, prefer larger models on Mac mini
+          if [[ "${{ env.ASR_BACKEND }}" == "local" && "${{ inputs.model }}" == "base" ]]; then
+            echo "WHISPER_MODEL=small" >> $GITHUB_ENV
+            echo "Upgraded to 'small' model for better Mac mini performance"
+          fi
+
+      - name: Transcribe audio on Mac mini
+        run: |
+          echo "Starting transcription on Mac mini with ${{ env.ASR_BACKEND }} backend"
+          echo "Model: ${{ env.WHISPER_MODEL }}"
+          echo "Optimization level: ${{ env.OPTIMIZATION_LEVEL }}"
+
+          # Show system resource usage before transcription
+          echo "System resources before transcription:"
+          top -l 1 | head -10
+
+          # Run transcription script
+          START_TIME=$(date +%s)
+          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ env.AUDIO_FILE }}" "${{ env.ASR_BACKEND }}")
+          END_TIME=$(date +%s)
+
+          if [[ $? -ne 0 ]]; then
+            echo "Error: Transcription failed"
+            exit 1
+          fi
+
+          if [[ ! -f "$OUTPUT_FILE" || ! -s "$OUTPUT_FILE" ]]; then
+            echo "Error: Transcription output is empty or missing"
+            exit 1
+          fi
+
+          DURATION=$((END_TIME - START_TIME))
+          echo "TRANSCRIPT_FILE=$OUTPUT_FILE" >> $GITHUB_ENV
+          echo "TRANSCRIPTION_DURATION=$DURATION" >> $GITHUB_ENV
+          echo "Transcription completed in ${DURATION}s: $OUTPUT_FILE"
+
+          # Show preview of transcript
+          echo "Transcript preview:"
+          head -10 "$OUTPUT_FILE"
+
+      - name: Display Mac mini performance metrics
+        run: |
+          echo "=== MAC MINI PERFORMANCE METRICS ==="
+          echo "Transcription duration: ${{ env.TRANSCRIPTION_DURATION }} seconds"
+          echo "File size: $(du -h "${{ env.AUDIO_FILE }}" | cut -f1)"
+          echo "Transcript length: $(wc -c < "${{ env.TRANSCRIPT_FILE }}") characters"
+
+          # Calculate processing speed
+          FILE_SIZE_MB=$(du -m "${{ env.AUDIO_FILE }}" | cut -f1)
+          if [[ ${{ env.TRANSCRIPTION_DURATION }} -gt 0 ]]; then
+            SPEED=$(echo "scale=2; $FILE_SIZE_MB / ${{ env.TRANSCRIPTION_DURATION }}" | bc)
+            echo "Processing speed: ${SPEED} MB/second"
+          fi
+
+          echo "=== END METRICS ==="
+
+      - name: Upload transcript as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-transcript-${{ github.run_number }}
+          path: ${{ env.TRANSCRIPT_FILE }}
+          retention-days: 7
+
+      - name: Display transcript content
+        if: always()
+        run: |
+          if [[ -f "${{ env.TRANSCRIPT_FILE }}" ]]; then
+            echo "=== TRANSCRIPT CONTENT ==="
+            cat "${{ env.TRANSCRIPT_FILE }}"
+            echo "=== END TRANSCRIPT ==="
+          else
+            echo "No transcript file found"
+          fi
+
+      - name: Cleanup Mac mini resources
+        if: always()
+        run: |
+          # Clean up downloaded audio file
+          if [[ -f "${{ env.AUDIO_FILE }}" ]]; then
+            rm -f "${{ env.AUDIO_FILE }}"
+            echo "Cleaned up audio file"
+          fi
+
+          # Clean up old temp files (older than 1 day)
+          find /tmp -name "relayq-transcribe-*" -type d -mtime +1 -exec rm -rf {} \; 2>/dev/null || true
+
+          # Show system resources after cleanup
+          echo "System resources after cleanup:"
+          top -l 1 | head -5

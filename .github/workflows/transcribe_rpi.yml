@@ -1,0 +1,313 @@
+name: Transcribe Audio (RPi4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio file URL to transcribe'
+        required: true
+        type: string
+      backend:
+        description: 'ASR backend to use (local, openai, router)'
+        required: false
+        type: string
+        default: 'router'
+      model:
+        description: 'Whisper model to use (for local backend)'
+        required: false
+        type: string
+        default: 'base'
+
+# RPi4 specific execution
+runs-on: [self-hosted, rpi4]
+timeout-minutes: 180
+
+# RPi4 specific concurrency control
+concurrency:
+  group: rpi4-transcribe
+  cancel-in-progress: false
+
+env:
+  ASR_BACKEND: ${{ inputs.backend || 'router' }}
+  WHISPER_MODEL: ${{ inputs.model || 'base' }}
+
+jobs:
+  transcribe:
+    runs-on: [self-hosted, rpi4]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify RPi4 runner
+        run: |
+          echo "Running on RPi4 runner"
+          echo "Hostname: $(hostname)"
+          echo "OS: $(uname -s)"
+          echo "Architecture: $(uname -m)"
+          echo "Memory: $(free -h | grep '^Mem:' | awk '{print $2}')"
+
+          # Verify this is actually Linux ARM
+          if [[ "$(uname)" != "Linux" ]]; then
+            echo "Error: This workflow should only run on Linux"
+            exit 1
+          fi
+
+          if [[ "$(uname -m)" != "aarch64" && "$(uname -m)" != "armv7l" ]]; then
+            echo "Error: This workflow should only run on ARM architecture"
+            exit 1
+          fi
+
+      - name: Check RPi4 system resources
+        run: |
+          echo "=== RPi4 SYSTEM RESOURCES ==="
+          echo "CPU Usage:"
+          top -bn1 | grep "Cpu(s)" || echo "CPU info not available"
+
+          echo "Memory Usage:"
+          free -h
+
+          echo "Disk Usage:"
+          df -h /
+
+          echo "Temperature:"
+          if command -v vcgencmd &> /dev/null; then
+            TEMPERATURE=$(vcgencmd measure_temp | cut -d'=' -f2 | cut -d'.' -f1)
+            echo "CPU Temperature: ${TEMPPERATURE}°C"
+
+            if [[ $TEMPERATURE -gt 75 ]]; then
+              echo "Warning: High CPU temperature detected"
+            fi
+          else
+            echo "Temperature monitoring not available"
+          fi
+
+          echo "=== END RESOURCES ==="
+
+      - name: Create output directory
+        run: |
+          mkdir -p /tmp/relayq-outputs
+          chmod 755 /tmp/relayq-outputs
+
+      - name: Validate input URL
+        run: |
+          if [[ -z "${{ inputs.url }}" ]]; then
+            echo "Error: URL is required"
+            exit 1
+          fi
+
+          if [[ ! "${{ inputs.url }}" =~ ^https?:// ]]; then
+            echo "Error: Invalid URL format"
+            exit 1
+          fi
+
+      - name: Download audio file
+        run: |
+          echo "Downloading audio from: ${{ inputs.url }}"
+          cd /tmp
+
+          # Extract filename from URL
+          FILENAME=$(basename "${{ inputs.url }}" | sed 's/?.*//')
+          if [[ -z "$FILENAME" ]]; then
+            FILENAME="audio-$(date +%s).mp3"
+          fi
+
+          # Download file
+          if ! curl -L -o "$FILENAME" --fail --show-error "${{ inputs.url }}"; then
+            echo "Error: Failed to download audio file"
+            exit 1
+          fi
+
+          # Verify file exists and has content
+          if [[ ! -f "$FILENAME" || ! -s "$FILENAME" ]]; then
+            echo "Error: Downloaded file is empty or missing"
+            exit 1
+          fi
+
+          echo "AUDIO_FILE=/tmp/$FILENAME" >> $GITHUB_ENV
+          echo "Downloaded: $FILENAME ($(du -h "$FILENAME" | cut -f1))"
+
+          # Check file size against RPi4 capabilities
+          FILE_SIZE_MB=$(du -m "$FILENAME" | cut -f1)
+          echo "FILE_SIZE_MB=$FILE_SIZE_MB" >> $GITHUB_ENV
+
+          if [[ $FILE_SIZE_MB -gt 200 ]]; then
+            echo "Warning: Large file detected (${FILE_SIZE_MB}MB). Consider using Mac mini for better performance."
+          fi
+
+      - name: Check RPi4 dependencies
+        run: |
+          echo "Checking RPi4 dependencies..."
+
+          # Check FFmpeg
+          if ! command -v ffmpeg &> /dev/null; then
+            echo "Error: FFmpeg not found. Please install FFmpeg with: sudo apt install ffmpeg"
+            exit 1
+          fi
+          echo "✓ FFmpeg found: $(ffmpeg -version | head -1)"
+
+          # Check Python for local backend
+          if [[ "${{ env.ASR_BACKEND }}" == "local" ]]; then
+            if ! command -v python3 &> /dev/null; then
+              echo "Error: Python3 not found for local transcription"
+              echo "Install with: sudo apt install python3 python3-pip"
+              exit 1
+            else
+              echo "✓ Python3 found: $(python3 --version)"
+            fi
+
+            # Check available memory
+            AVAILABLE_MEM=$(free -m | awk '/^Mem:/ {print $7}')
+            echo "✓ Available memory: ${AVAILABLE_MEM}MB"
+
+            if [[ $AVAILABLE_MEM -lt 512 ]]; then
+              echo "Warning: Low memory available, transcription may be slow or fail"
+              echo "Recommend using cloud backend (openai or router)"
+            fi
+          fi
+
+          # Check internet connectivity for cloud backends
+          if [[ "${{ env.ASR_BACKEND }}" == "openai" || "${{ env.ASR_BACKEND }}" == "router" ]]; then
+            if ! ping -c 1 api.openai.com &> /dev/null && ! ping -c 1 openrouter.ai &> /dev/null; then
+              echo "Warning: No internet connectivity for cloud backend"
+            else
+              echo "✓ Internet connectivity confirmed"
+            fi
+          fi
+
+          echo "RPi4 dependency check completed"
+
+      - name: Configure RPi4 environment
+        run: |
+          # Set RPi4 specific environment
+          echo "DEVICE_TYPE=rpi4" >> $GITHUB_ENV
+
+          # For local backend, use smaller models on RPi4
+          if [[ "${{ env.ASR_BACKEND }}" == "local" ]]; then
+            # Switch to base model if using small or larger
+            if [[ "${{ env.WHISPER_MODEL }}" == "small" || "${{ env.WHISPER_MODEL }}" == "medium" || "${{ env.WHISPER_MODEL }}" == "large" ]]; then
+              echo "WHISPER_MODEL=base" >> $GITHUB_ENV
+              echo "Downgraded to 'base' model for RPi4 compatibility"
+            fi
+
+            # Check memory again for very large files
+            if [[ ${{ env.FILE_SIZE_MB }} -gt 100 ]]; then
+              echo "Warning: Large file with local backend may be slow on RPi4"
+            fi
+          fi
+
+      - name: Transcribe audio on RPi4
+        run: |
+          echo "Starting transcription on RPi4 with ${{ env.ASR_BACKEND }} backend"
+          echo "Model: ${{ env.WHISPER_MODEL }}"
+          echo "File size: ${{ env.FILE_SIZE_MB }}MB"
+
+          # Monitor system resources during transcription
+          echo "Starting resource monitoring..."
+          top -bn1 | head -5
+
+          # Run transcription script
+          START_TIME=$(date +%s)
+          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ env.AUDIO_FILE }}" "${{ env.ASR_BACKEND }}")
+          END_TIME=$(date +%s)
+
+          if [[ $? -ne 0 ]]; then
+            echo "Error: Transcription failed"
+            exit 1
+          fi
+
+          if [[ ! -f "$OUTPUT_FILE" || ! -s "$OUTPUT_FILE" ]]; then
+            echo "Error: Transcription output is empty or missing"
+            exit 1
+          fi
+
+          DURATION=$((END_TIME - START_TIME))
+          echo "TRANSCRIPT_FILE=$OUTPUT_FILE" >> $GITHUB_ENV
+          echo "TRANSCRIPTION_DURATION=$DURATION" >> $GITHUB_ENV
+          echo "Transcription completed in ${DURATION}s: $OUTPUT_FILE"
+
+          # Show final system resources
+          echo "System resources after transcription:"
+          top -bn1 | head -5
+
+          # Check temperature again
+          if command -v vcgencmd &> /dev/null; then
+            TEMPERATURE=$(vcgencmd measure_temp | cut -d'=' -f2 | cut -d'.' -f1)
+            echo "Final CPU Temperature: ${TEMPPERATURE}°C"
+
+            if [[ $TEMPERATURE -gt 80 ]]; then
+              echo "Warning: High CPU temperature after transcription"
+            fi
+          fi
+
+          # Show preview of transcript
+          echo "Transcript preview:"
+          head -10 "$OUTPUT_FILE"
+
+      - name: Display RPi4 performance metrics
+        run: |
+          echo "=== RPi4 PERFORMANCE METRICS ==="
+          echo "Device type: ${{ env.DEVICE_TYPE }}"
+          echo "Transcription duration: ${{ env.TRANSCRIPTION_DURATION }} seconds"
+          echo "File size: ${{ env.FILE_SIZE_MB }}MB"
+          echo "Transcript length: $(wc -c < "${{ env.TRANSCRIPT_FILE }}") characters"
+
+          # Calculate processing speed
+          if [[ ${{ env.TRANSCRIPTION_DURATION }} -gt 0 ]]; then
+            SPEED=$(echo "scale=2; ${{ env.FILE_SIZE_MB }} / ${{ env.TRANSCRIPTION_DURATION }}" | bc)
+            echo "Processing speed: ${SPEED} MB/second"
+          fi
+
+          # Performance assessment
+          if [[ ${{ env.TRANSCRIPTION_DURATION }} -lt 60 ]]; then
+            echo "Performance: Excellent (< 1 minute)"
+          elif [[ ${{ env.TRANSCRIPTION_DURATION }} -lt 300 ]]; then
+            echo "Performance: Good (< 5 minutes)"
+          elif [[ ${{ env.TRANSCRIPTION_DURATION }} -lt 900 ]]; then
+            echo "Performance: Acceptable (< 15 minutes)"
+          else
+            echo "Performance: Slow (> 15 minutes - consider Mac mini for large files)"
+          fi
+
+          echo "=== END METRICS ==="
+
+      - name: Upload transcript as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rpi4-transcript-${{ github.run_number }}
+          path: ${{ env.TRANSCRIPT_FILE }}
+          retention-days: 7
+
+      - name: Display transcript content
+        if: always()
+        run: |
+          if [[ -f "${{ env.TRANSCRIPT_FILE }}" ]]; then
+            echo "=== TRANSCRIPT CONTENT ==="
+            cat "${{ env.TRANSCRIPT_FILE }}"
+            echo "=== END TRANSCRIPT ==="
+          else
+            echo "No transcript file found"
+          fi
+
+      - name: Cleanup RPi4 resources
+        if: always()
+        run: |
+          # Clean up downloaded audio file
+          if [[ -f "${{ env.AUDIO_FILE }}" ]]; then
+            rm -f "${{ env.AUDIO_FILE }}"
+            echo "Cleaned up audio file"
+          fi
+
+          # Clean up old temp files (older than 1 day)
+          find /tmp -name "relayq-transcribe-*" -type d -mtime +1 -exec rm -rf {} \; 2>/dev/null || true
+
+          # Clear system caches to free memory
+          if command -v sync &> /dev/null; then
+            sync
+            echo "Cleared system caches"
+          fi
+
+          # Final system status
+          echo "Final system status:"
+          free -h
