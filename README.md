@@ -115,8 +115,9 @@ mkdir -p ~/.config/relayq
 cat > ~/.config/relayq/env << 'EOF'
 ASR_BACKEND=local
 WHISPER_MODEL=base
-# OPENAI_API_KEY=sk-...
-# ROUTER_API_KEY=sk-or-...
+
+# Just paste your API key here - works with OpenAI, OpenRouter, etc.
+AI_API_KEY=sk-your-api-key-here
 EOF
 ```
 

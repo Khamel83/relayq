@@ -18,6 +18,7 @@ fi
 ASR_BACKEND="${ASR_BACKEND:-local}"
 WHISPER_MODEL="${WHISPER_MODEL:-base}"
 WHISPER_MODEL_PATH="${WHISPER_MODEL_PATH:-/opt/models/whisper}"
+AI_API_KEY="${AI_API_KEY:-}"
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 ROUTER_API_KEY="${ROUTER_API_KEY:-}"
 ROUTER_BASE_URL="${ROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
@@ -184,15 +185,17 @@ use_openai_api() {
 
     log_info "Using OpenAI API backend"
 
-    if [[ -z "$OPENAI_API_KEY" ]]; then
-        log_error "OpenAI API key not configured"
+    # Try AI_API_KEY first, then OPENAI_API_KEY
+    local api_key="${AI_API_KEY:-$OPENAI_API_KEY}"
+    if [[ -z "$api_key" ]]; then
+        log_error "OpenAI API key not configured. Set AI_API_KEY or OPENAI_API_KEY"
         return 1
     fi
 
     log_info "Transcribing with OpenAI API"
     local response
     response=$(curl -X POST "https://api.openai.com/v1/audio/transcriptions" \
-        -H "Authorization: Bearer $OPENAI_API_KEY" \
+        -H "Authorization: Bearer $api_key" \
         -H "Content-Type: multipart/form-data" \
         -F "file=@$input_file" \
         -F "model=whisper-1" \
@@ -215,15 +218,17 @@ use_router_api() {
 
     log_info "Using Router API backend"
 
-    if [[ -z "$ROUTER_API_KEY" ]]; then
-        log_error "Router API key not configured"
+    # Try AI_API_KEY first, then ROUTER_API_KEY
+    local api_key="${AI_API_KEY:-$ROUTER_API_KEY}"
+    if [[ -z "$api_key" ]]; then
+        log_error "Router API key not configured. Set AI_API_KEY or ROUTER_API_KEY"
         return 1
     fi
 
     log_info "Transcribing with Router API: $ROUTER_MODEL"
     local response
     response=$(curl -X POST "${ROUTER_BASE_URL}/audio/transcriptions" \
-        -H "Authorization: Bearer $ROUTER_API_KEY" \
+        -H "Authorization: Bearer $api_key" \
         -H "HTTP-Referer: https://github.com/Khamel83/relayq" \
         -H "X-Title: RelayQ" \
         -H "Content-Type: multipart/form-data" \
