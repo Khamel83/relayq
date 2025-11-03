@@ -21,7 +21,7 @@
 **Why Not Redis:**
 - **Maintenance overhead**: Redis server management
 - **Security concerns**: Redis exposure to internet
-- **Single point of failure**: Redis broker downtime
+- **Single point of failure**: Service downtime
 - **Complexity**: Additional infrastructure component
 - **Monitoring**: Separate system to monitor
 

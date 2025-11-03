@@ -133,7 +133,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Redis-based job queue system
 - Python client library
-- Installation scripts for broker and workers
+- Installation scripts for workers
 - Basic documentation
 
 ### Features
@@ -155,7 +155,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 1. **Stop existing Redis workers**
    ```bash
-   sudo systemctl stop redis
+   sudo systemctl stop old_services
    ```
 
 2. **Archive existing installation**

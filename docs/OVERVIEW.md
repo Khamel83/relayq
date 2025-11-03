@@ -57,4 +57,4 @@ Labels define what jobs runners can execute:
 - **Free tier**: 2,000 minutes/month of free runner time
 - **Better UI**: GitHub's native interface for monitoring jobs
 - **API integration**: Easy integration with other GitHub workflows
-- **Scalability**: Add/remove runners without reconfiguring brokers
+- **Scalability**: Add/remove runners without reconfiguration
