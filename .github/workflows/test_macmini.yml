@@ -2,6 +2,12 @@ name: Test Mac Mini Runner
 
 on:
   workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe (optional)'
+        required: false
+        type: string
+        default: ''
 
 jobs:
   test-mac-mini:
@@ -44,4 +50,71 @@ jobs:
             echo "✗ Python3 not found"
           fi
 
+          # Check MacWhisper
+          if [[ -d "/Applications/MacWhisper.app" ]]; then
+            echo "✓ MacWhisper Pro found at /Applications/MacWhisper.app"
+          else
+            echo "⚠ MacWhisper Pro not found"
+          fi
+
           echo "=== Test Complete ==="
+
+      - name: Transcribe Podcast (if URL provided)
+        if: inputs.url != ''
+        run: |
+          echo "=== PODCAST TRANSCRIPTION ==="
+          echo "URL: ${{ inputs.url }}"
+
+          # Create temp directory
+          mkdir -p /tmp/podcast-test
+          cd /tmp/podcast-test
+
+          # Download with yt-dlp
+          echo "Downloading audio with yt-dlp..."
+          if yt-dlp -f "bestaudio" -o "podcast.mp3" --no-playlist "${{ inputs.url }}"; then
+            echo "✓ Audio downloaded successfully"
+            ls -lh podcast.mp3
+
+            # Transcribe
+            echo "Starting transcription..."
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading base model...')
+    model = whisper.load_model('base')
+    print('Transcribing audio...')
+    result = model.transcribe('podcast.mp3', verbose=False)
+
+    transcript = result['text']
+    print(f'✓ Transcription completed: {len(transcript)} characters')
+
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('First 300 characters of transcript:')
+    print('=' * 50)
+    print(transcript[:300])
+    print('=' * 50)
+
+except Exception as e:
+    print(f'❌ Transcription failed: {e}')
+    sys.exit(1)
+"
+
+            # Show full transcript
+            if [[ -f "transcript.txt" ]]; then
+              echo ""
+              echo "=== FULL TRANSCRIPT ==="
+              cat transcript.txt
+              echo "=== END TRANSCRIPT ==="
+            fi
+          else
+            echo "❌ Failed to download audio"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/podcast-test
