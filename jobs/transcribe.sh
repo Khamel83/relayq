@@ -85,9 +85,23 @@ download_file() {
     local dest_path="$dest_dir/$filename"
 
     log_info "Downloading from: $url"
-    if ! curl -L -o "$dest_path" --fail --show-error "$url"; then
-        log_error "Failed to download file from: $url"
-        return 1
+
+    # Try yt-dlp first for streaming platforms
+    if command -v yt-dlp &> /dev/null && [[ "$url" =~ soundcloud\.com|youtube\.com|youtu\.be ]]; then
+        log_info "Using yt-dlp for streaming platform URL"
+        if ! yt-dlp -f "bestaudio" -o "$dest_path" --no-playlist "$url" 2>/dev/null; then
+            log_error "yt-dlp failed, falling back to direct download"
+            if ! curl -L -o "$dest_path" --fail --show-error "$url"; then
+                log_error "Failed to download file from: $url"
+                return 1
+            fi
+        fi
+    else
+        # Direct download
+        if ! curl -L -o "$dest_path" --fail --show-error "$url"; then
+            log_error "Failed to download file from: $url"
+            return 1
+        fi
     fi
 
     log_info "Downloaded to: $dest_path"
@@ -100,8 +114,7 @@ download_file() {
 
     # Check if it's actually an audio file (not HTML)
     if file "$dest_path" | grep -q "HTML"; then
-        log_error "Downloaded file is HTML, not audio. URL may need direct audio link."
-        log_error "Try using yt-dlp to get direct audio URL first."
+        log_error "Downloaded file is HTML, not audio. Install yt-dlp for streaming platforms."
         return 1
     fi
 
