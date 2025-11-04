@@ -1,0 +1,70 @@
+name: Transcribe Podcast (Mac Mini)
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe'
+        required: true
+        type: string
+      backend:
+        description: 'ASR backend (local, openai, router)'
+        required: false
+        type: string
+        default: 'local'
+      model:
+        description: 'Model name'
+        required: false
+        type: string
+        default: 'base'
+
+jobs:
+  transcribe:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load environment and transcribe
+        run: |
+          echo "=== PODCAST TRANSCRIPTION ==="
+          echo "URL: ${{ inputs.url }}"
+          echo "Backend: ${{ inputs.backend }}"
+          echo "Model: ${{ inputs.model }}"
+
+          # Load Mac mini environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            echo "Loading environment..."
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+            echo "✓ OpenRouter: ${OPENAI_API_BASE_URL:-not set}"
+            echo "✓ ASR Backend: ${ASR_BACKEND:-not set}"
+          fi
+
+          # Use workflow inputs or defaults from environment
+          BACKEND="${{ inputs.backend }}"
+          MODEL="${{ inputs.model }}"
+
+          echo "Starting transcription with $BACKEND backend..."
+
+          # Run transcription
+          START_TIME=$(date +%s)
+          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ inputs.url }}" "$BACKEND")
+          END_TIME=$(date +%s)
+
+          if [[ $? -eq 0 && -f "$OUTPUT_FILE" ]]; then
+            DURATION=$((END_TIME - START_TIME))
+            echo "✓ Transcription completed in ${DURATION}s"
+            echo "✓ Output file: $OUTPUT_FILE"
+
+            # Show transcript
+            echo ""
+            echo "=== TRANSCRIPT ==="
+            cat "$OUTPUT_FILE"
+            echo "=== END TRANSCRIPT ==="
+          else
+            echo "❌ Transcription failed"
+            exit 1
+          fi
