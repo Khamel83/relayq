@@ -1,0 +1,90 @@
+name: Direct Mac Transcription
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe'
+        required: true
+        type: string
+
+jobs:
+  transcribe:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 15
+
+    steps:
+      - name: Verify Mac mini runner
+        run: |
+          echo "=== Mac Mini Direct Transcription ==="
+          echo "Hostname: $(hostname)"
+          echo "OS: $(uname -s)"
+          echo "Memory: $(sysctl -n hw.memsize | awk '{print int($1/1024/1024/1024)}')GB"
+
+          # Load environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            echo "✓ Environment file found"
+            source "$HOME/.config/relayq/env"
+            echo "✓ OpenRouter: ${OPENAI_API_BASE_URL:-not set}"
+          fi
+
+      - name: Direct Transcription
+        run: |
+          echo "Starting direct transcription..."
+          echo "URL: ${{ inputs.url }}"
+
+          # Create directories
+          mkdir -p /tmp/direct-transcript
+          cd /tmp/direct-transcript
+
+          # Download with yt-dlp
+          echo "Downloading audio file..."
+          yt-dlp -f "bestaudio" -o "audio.mp3" --no-playlist "${{ inputs.url }}"
+
+          if [[ -f "audio.mp3" ]]; then
+            echo "✓ Audio downloaded successfully"
+            echo "File size: $(ls -lh audio.mp3 | awk '{print $5}')"
+
+            # Transcribe directly
+            echo "Starting transcription with Whisper..."
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading base model...')
+    model = whisper.load_model('base')
+    print('Transcribing...')
+    result = model.transcribe('audio.mp3', verbose=True)
+
+    transcript = result['text']
+    print(f'Transcript length: {len(transcript)} characters')
+
+    # Save transcript
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('✓ Transcription saved to transcript.txt')
+
+except Exception as e:
+    print(f'❌ Error: {e}')
+    sys.exit(1)
+"
+
+            # Display results
+            if [[ -f "transcript.txt" ]]; then
+              echo ""
+              echo "=== PODCAST TRANSCRIPT ==="
+              cat transcript.txt
+              echo "=== END TRANSCRIPT ==="
+            else
+              echo "❌ No transcript generated"
+            fi
+          else
+            echo "❌ Audio download failed"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/direct-transcript
