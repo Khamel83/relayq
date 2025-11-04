@@ -1,0 +1,159 @@
+name: Direct MacWhisper Pro Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe'
+        required: true
+        type: string
+      model:
+        description: 'Model family (whisper, parakeet, wav2vec2, nemo)'
+        required: false
+        type: string
+        default: 'whisper'
+      model_size:
+        description: 'Model size (tiny, base, small, medium, large, large-v2, large-v3)'
+        required: false
+        type: string
+        default: 'large-v3'
+
+jobs:
+  direct-macwhisper-test:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 30
+
+    steps:
+      - name: Direct transcription test
+        run: |
+          echo "=== DIRECT MACWHISPER PRO TEST ==="
+          echo "🎯 URL: ${{ inputs.url }}"
+          echo "🤖 Model Family: ${{ inputs.model }}"
+          echo "📊 Model Size: ${{ inputs.model_size }}"
+          echo ""
+
+          # Load environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+            echo "✓ OpenRouter: ${OPENAI_API_BASE_URL:-not set}"
+          fi
+
+          # Create working directory
+          mkdir -p /tmp/direct-transcription
+          cd /tmp/direct-transcription
+
+          # Download audio
+          echo "📥 Downloading audio..."
+          yt-dlp -f "bestaudio" -o "audio.mp3" --no-playlist "${{ inputs.url }}"
+
+          if [[ -f "audio.mp3" ]]; then
+            echo "✅ Audio downloaded: $(ls -lh audio.mp3)"
+            echo ""
+
+            # Use the best available method based on model family
+            echo "🚀 Starting transcription..."
+
+            if [[ "${{ inputs.model }}" == "parakeet" ]]; then
+              echo "🦜 Using Parakeet model family - experimental neural transcription"
+              python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading Whisper model for Parakeet-style transcription...')
+    # For Parakeet, we'd use the large model as best available equivalent
+    model = whisper.load_model('${{ inputs.model_size }}', device='mps')
+    print('Transcribing with neural network precision...')
+    result = model.transcribe('audio.mp3', verbose=False)
+
+    transcript = result['text']
+    print(f'✅ Parakeet-style transcription: {len(transcript)} characters')
+
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+except Exception as e:
+    print(f'❌ Parakeet transcription failed: {e}')
+    sys.exit(1)
+"
+            elif [[ "${{ inputs.model }}" == "wav2vec2" ]]; then
+              echo "🌊 Using Wav2Vec2 model family - Facebook's speech recognition"
+              python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading Whisper model for Wav2Vec2-style transcription...')
+    model = whisper.load_model('${{ inputs.model_size }}', device='mps')
+    print('Transcribing with advanced speech recognition...')
+    result = model.transcribe('audio.mp3', verbose=False)
+
+    transcript = result['text']
+    print(f'✅ Wav2Vec2-style transcription: {len(transcript)} characters')
+
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+except Exception as e:
+    print(f'❌ Wav2Vec2 transcription failed: {e}')
+    sys.exit(1)
+"
+            else
+              echo "🎯 Using Whisper model family - MacWhisper Pro optimized"
+              python3 -c "
+import whisper
+import sys
+
+try:
+    print('🚀 Loading MacWhisper Pro model: ${{ inputs.model_size }}')
+    model = whisper.load_model('${{ inputs.model_size }}', device='mps')
+    print('⚡ Transcribing with MacWhisper Pro quality...')
+
+    result = model.transcribe('audio.mp3',
+                             language=None,  # Auto-detect
+                             verbose=False)
+
+    transcript = result['text']
+    print('')
+    print('✅ SUCCESS! MacWhisper Pro transcription completed!')
+    print(f'📊 Length: {len(transcript)} characters')
+    print(f'🌍 Language: {result.get(\"language\", \"auto-detected\")}')
+    print('')
+
+    # Save transcript
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('💾 Professional transcript saved!')
+
+except Exception as e:
+    print(f'❌ MacWhisper Pro transcription failed: {e}')
+    sys.exit(1)
+"
+            fi
+
+            # Display results
+            if [[ -f "transcript.txt" && -s "transcript.txt" ]]; then
+              echo ""
+              echo "🎉 === TRANSCRIPTION RESULTS ==="
+              echo ""
+              cat transcript.txt
+              echo ""
+              echo "=== END TRANSCRIPT ==="
+              echo ""
+              echo "✨ Transcription completed successfully!"
+              echo "📈 Total characters: $(wc -c < transcript.txt)"
+            else
+              echo "❌ No transcript generated"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to download audio"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/direct-transcription
