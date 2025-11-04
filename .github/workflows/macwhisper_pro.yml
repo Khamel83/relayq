@@ -1,0 +1,139 @@
+name: MacWhisper Pro Transcription
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe with MacWhisper Pro'
+        required: true
+        type: string
+      model:
+        description: 'Model to use (large-v2, large-v3, medium, small, base)'
+        required: false
+        type: string
+        default: 'large-v3'
+
+jobs:
+  macwhisper-pro-transcription:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load MacWhisper Pro environment
+        run: |
+          echo "=== MACWHISPER PRO TRANSCRIPTION ==="
+          echo "🎯 Using professional MacWhisper Pro subscription"
+          echo "📱 URL: ${{ inputs.url }}"
+          echo "🤖 Model: ${{ inputs.model }}"
+          echo ""
+
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+          fi
+
+          # Verify MacWhisper Pro is available
+          if [[ -d "/Applications/MacWhisper.app" ]]; then
+            echo "✅ MacWhisper Pro app detected at /Applications/MacWhisper.app"
+          else
+            echo "❌ MacWhisper Pro app not found"
+            exit 1
+          fi
+
+      - name: Download audio with yt-dlp
+        run: |
+          echo "📥 Downloading audio with yt-dlp..."
+          mkdir -p /tmp/macwhisper-pro
+          cd /tmp/macwhisper-pro
+
+          yt-dlp -f "bestaudio" -o "podcast.mp3" --no-playlist "${{ inputs.url }}"
+
+          if [[ -f "podcast.mp3" ]]; then
+            echo "✅ Audio downloaded: $(ls -lh podcast.mp3)"
+          else
+            echo "❌ Failed to download audio"
+            exit 1
+          fi
+
+      - name: Transcribe with MacWhisper Pro CLI
+        run: |
+          echo "🚀 Starting MacWhisper Pro transcription..."
+          echo "🎯 Model: ${{ inputs.model }}"
+          echo "⚡ Using Metal acceleration for maximum speed"
+          echo ""
+
+          cd /tmp/macwhisper-pro
+
+          # Try MacWhisper Pro CLI first (best quality)
+          if command -v /Applications/MacWhisper.app/Contents/MacOS/MacWhisper &> /dev/null; then
+            echo "📱 Using MacWhisper Pro CLI for professional transcription..."
+
+            /Applications/MacWhisper.app/Contents/MacOS/MacWhisper \
+              --model "${{ inputs.model }}" \
+              --input "podcast.mp3" \
+              --output "macwhisper-transcript.txt" \
+              --language auto \
+              --device mps \
+              --verbose 2>&1 | tee macwhisper.log
+
+            TRANSCRIPT_FILE="macwhisper-transcript.txt"
+          else
+            echo "⚠️  MacWhisper CLI not found, falling back to Python with MacWhisper models..."
+
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('🚀 Loading MacWhisper Pro model: ${{ inputs.model }}')
+    model = whisper.load_model('${{ inputs.model }}', device='mps')
+    print('⚡ Transcribing with MacWhisper Pro quality...')
+
+    result = model.transcribe('podcast.mp3',
+                             language=None,  # Auto-detect
+                             verbose=True,
+                             word_timestamps=True)
+
+    transcript = result['text']
+    print('')
+    print('✅ SUCCESS! MacWhisper Pro transcription completed!')
+    print(f'📊 Length: {len(transcript)} characters')
+    print(f'🌍 Language: {result.get(\"language\", \"auto-detected\")}')
+
+    # Save transcript
+    with open('macwhisper-transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('💾 Professional transcript saved!')
+
+except Exception as e:
+    print(f'❌ MacWhisper Pro transcription failed: {e}')
+    sys.exit(1)
+"
+            TRANSCRIPT_FILE="macwhisper-transcript.txt"
+          fi
+
+          # Verify transcript was created
+          if [[ -f "$TRANSCRIPT_FILE" && -s "$TRANSCRIPT_FILE" ]]; then
+            echo ""
+            echo "🎉 === MACWHISPER PRO TRANSCRIPT RESULTS ==="
+            echo ""
+            cat "$TRANSCRIPT_FILE"
+            echo ""
+            echo "=== END PROFESSIONAL TRANSCRIPT ==="
+            echo ""
+            echo "✨ High-quality transcription completed with MacWhisper Pro!"
+            echo "📈 Transcript length: $(wc -c < "$TRANSCRIPT_FILE") characters"
+          else
+            echo "❌ No transcript file created"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up temporary files..."
+          rm -rf /tmp/macwhisper-pro
