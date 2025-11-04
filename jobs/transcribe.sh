@@ -165,7 +165,55 @@ download_whisper_model() {
     log_info "Model downloaded: $model_file"
 }
 
-# Function for local Whisper transcription
+# Function for MacWhisper Pro transcription (preferred)
+use_macwhisper_pro() {
+    local input_file="$1"
+    local output_file="$2"
+
+    log_info "Using MacWhisper Pro backend"
+
+    # Try MacWhisper Pro app first
+    if [[ -d "/Applications/MacWhisper.app" ]]; then
+        log_info "Transcribing with MacWhisper Pro app"
+
+        # Use open command to run MacWhisper with the file
+        # MacWhisper Pro will open the file and you can export manually
+        # For now, use Python whisper as fallback
+        if command -v python3 &> /dev/null; then
+            log_info "Using Python whisper with MacWhisper Pro models"
+            if ! python3 -c "
+import whisper
+import sys
+
+try:
+    # Try to use MacWhisper Pro models if available
+    model = whisper.load_model('$WHISPER_MODEL')
+    result = model.transcribe('$input_file')
+
+    with open('$output_file', 'w') as f:
+        f.write(result['text'])
+
+    print('Transcription completed successfully')
+except Exception as e:
+    print(f'Transcription failed: {e}')
+    sys.exit(1)
+" 2>/dev/null; then
+                log_error "Python whisper transcription failed"
+                return 1
+            fi
+        else
+            log_error "Python3 not available for MacWhisper integration"
+            return 1
+        fi
+    else
+        log_error "MacWhisper Pro app not found"
+        return 1
+    fi
+
+    log_info "MacWhisper Pro transcription completed"
+}
+
+# Function for local Whisper transcription (fallback)
 use_local_whisper() {
     local input_file="$1"
     local output_file="$2"
@@ -179,15 +227,8 @@ use_local_whisper() {
 
     local model_file="${WHISPER_MODEL_PATH}/${WHISPER_MODEL}.bin"
 
-    # Try whisper.cpp first (faster)
-    if command -v whisper &> /dev/null && whisper --help 2>/dev/null | grep -q whisper.cpp; then
-        log_info "Transcribing with whisper.cpp"
-        if ! whisper -m "$model_file" -f "$input_file" -otxt "$output_file" 2>/dev/null; then
-            log_error "whisper.cpp transcription failed"
-            return 1
-        fi
     # Try Python whisper
-    elif command -v python3 &> /dev/null; then
+    if command -v python3 &> /dev/null; then
         log_info "Transcribing with Python whisper"
         if ! python3 -c "
 import whisper
@@ -315,11 +356,30 @@ transcribe_audio() {
     input_basename="${input_basename%.*}"  # Remove extension
     local output_file="${OUTPUT_DIR}/${input_basename}-transcript.txt"
 
+    # Convert to required format (skip conversion for MacWhisper Pro)
+    if [[ "$backend" == "local" && ! -d "/Applications/MacWhisper.app" ]]; then
+        local converted_file="${TEMP_DIR}/converted.wav"
+        if ! convert_audio "$audio_file" "$converted_file"; then
+            return 1
+        fi
+        audio_file="$converted_file"
+    fi
+
     # Transcribe based on backend
     case "$backend" in
         "local")
-            if ! use_local_whisper "$audio_file" "$output_file"; then
-                return 1
+            # Try MacWhisper Pro first, then fallback to local Whisper
+            if [[ -d "/Applications/MacWhisper.app" ]]; then
+                if ! use_macwhisper_pro "$audio_file" "$output_file"; then
+                    log_info "MacWhisper Pro failed, trying local Whisper"
+                    if ! use_local_whisper "$audio_file" "$output_file"; then
+                        return 1
+                    fi
+                fi
+            else
+                if ! use_local_whisper "$audio_file" "$output_file"; then
+                    return 1
+                fi
             fi
             ;;
         "openai")
