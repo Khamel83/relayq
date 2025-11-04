@@ -1,0 +1,101 @@
+name: High Quality Transcription
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe with best quality'
+        required: true
+        type: string
+
+jobs:
+  transcribe-hq:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load environment
+        run: |
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+            echo "✓ OpenRouter: ${OPENAI_API_BASE_URL:-not set}"
+          fi
+
+      - name: High Quality Transcription
+        run: |
+          echo "=== HIGH QUALITY TRANSCRIPTION ==="
+          echo "URL: ${{ inputs.url }}"
+          echo "Model: Whisper Large (Best Quality)"
+          echo ""
+
+          # Create output directory
+          mkdir -p /tmp/relayq-outputs
+
+          # Download with yt-dlp
+          echo "Downloading audio..."
+          cd /tmp
+          yt-dlp -f "bestaudio" -o "podcast.mp3" --no-playlist "${{ inputs.url }}"
+
+          # Check if file exists
+          if [[ -f "podcast.mp3" ]]; then
+            echo "✓ Audio downloaded: $(ls -lh podcast.mp3)"
+            echo ""
+
+            # High quality transcription with large model
+            echo "Starting HIGH QUALITY transcription with Whisper Large model..."
+            echo "This will provide the best possible transcription quality."
+            echo ""
+
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('🚀 Loading Whisper LARGE model (best quality)...')
+    model = whisper.load_model('large', device='mps')  # Use Metal acceleration
+    print('⚡ Transcribing with maximum accuracy...')
+    result = model.transcribe('podcast.mp3', verbose=True)
+
+    transcript = result['text']
+    print('')
+    print('✅ SUCCESS! High-quality transcription completed!')
+    print(f'📊 Length: {len(transcript)} characters')
+    print(f'🎯 Language detected: {result.get(\"language\", \"unknown\")}')
+
+    # Save transcript
+    with open('/tmp/relayq-outputs/transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('💾 Transcript saved to /tmp/relayq-outputs/transcript.txt')
+    print('')
+
+except Exception as e:
+    print(f'❌ Transcription failed: {e}')
+    sys.exit(1)
+"
+
+            if [[ -f "/tmp/relayq-outputs/transcript.txt" ]]; then
+              echo ""
+              echo "🎉 === HIGH QUALITY TRANSCRIPT RESULTS ==="
+              echo ""
+              cat /tmp/relayq-outputs/transcript.txt
+              echo ""
+              echo "=== END TRANSCRIPT ==="
+              echo ""
+              echo "✨ Transcription completed with best possible quality!"
+            else
+              echo "❌ No transcript file created"
+            fi
+          else
+            echo "❌ Failed to download audio"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd /tmp
+          rm -f podcast.mp3
