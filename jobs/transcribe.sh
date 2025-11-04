@@ -357,12 +357,17 @@ transcribe_audio() {
     local output_file="${OUTPUT_DIR}/${input_basename}-transcript.txt"
 
     # Convert to required format (skip conversion for MacWhisper Pro)
-    if [[ "$backend" == "local" && ! -d "/Applications/MacWhisper.app" ]]; then
-        local converted_file="${TEMP_DIR}/converted.wav"
-        if ! convert_audio "$audio_file" "$converted_file"; then
-            return 1
+    if [[ "$backend" == "local" ]]; then
+        if [[ ! -d "/Applications/MacWhisper.app" ]]; then
+            # Only convert if MacWhisper is NOT available
+            local converted_file="${TEMP_DIR}/converted.wav"
+            if ! convert_audio "$audio_file" "$converted_file"; then
+                return 1
+            fi
+            audio_file="$converted_file"
+        else
+            log_info "MacWhisper Pro detected, skipping audio conversion"
         fi
-        audio_file="$converted_file"
     fi
 
     # Transcribe based on backend
