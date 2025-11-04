@@ -1,0 +1,47 @@
+name: Test Mac Mini Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-mac-mini:
+    runs-on: [self-hosted, macmini]
+    steps:
+      - name: Verify Mac mini runner
+        run: |
+          echo "=== Mac Mini Runner Test ==="
+          echo "Hostname: $(hostname)"
+          echo "OS: $(uname -s)"
+          echo "Architecture: $(uname -m)"
+          echo "Memory: $(sysctl -n hw.memsize | awk '{print int($1/1024/1024/1024)}')GB"
+
+          # Verify this is actually macOS
+          if [[ "$(uname)" != "Darwin" ]]; then
+            echo "Error: This workflow should only run on macOS"
+            exit 1
+          fi
+
+          # Check if environment file exists
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            echo "✓ Environment file found"
+            source "$HOME/.config/relayq/env"
+            echo "✓ OpenRouter API configured: ${OPENAI_API_BASE_URL:-not set}"
+            echo "✓ ASR Backend: ${ASR_BACKEND:-not set}"
+          else
+            echo "⚠ Environment file not found at $HOME/.config/relayq/env"
+          fi
+
+          # Check dependencies
+          if command -v ffmpeg &> /dev/null; then
+            echo "✓ FFmpeg: $(ffmpeg -version | head -1)"
+          else
+            echo "✗ FFmpeg not found"
+          fi
+
+          if command -v python3 &> /dev/null; then
+            echo "✓ Python3: $(python3 --version)"
+          else
+            echo "✗ Python3 not found"
+          fi
+
+          echo "=== Test Complete ==="
