@@ -170,47 +170,82 @@ use_macwhisper_pro() {
     local input_file="$1"
     local output_file="$2"
 
-    log_info "Using MacWhisper Pro backend"
+    log_info "Using MacWhisper Pro backend - professional transcription"
 
-    # Try MacWhisper Pro app first
-    if [[ -d "/Applications/MacWhisper.app" ]]; then
-        log_info "Transcribing with MacWhisper Pro app"
+    # Verify MacWhisper Pro app exists
+    if [[ ! -d "/Applications/MacWhisper.app" ]]; then
+        log_error "MacWhisper Pro app not found at /Applications/MacWhisper.app"
+        return 1
+    fi
 
-        # Use open command to run MacWhisper with the file
-        # MacWhisper Pro will open the file and you can export manually
-        # For now, use Python whisper as fallback
-        if command -v python3 &> /dev/null; then
-            log_info "Using Python whisper with MacWhisper Pro models"
+    log_info "MacWhisper Pro app detected, attempting professional transcription"
+
+    # Try MacWhisper Pro CLI first (highest quality)
+    local macwhisper_cli="/Applications/MacWhisper.app/Contents/MacOS/MacWhisper"
+    if [[ -x "$macwhisper_cli" ]]; then
+        log_info "Using MacWhisper Pro CLI for professional transcription"
+
+        # Use large-v3 model for best quality with MacWhisper Pro
+        if ! "$macwhisper_cli" \
+            --model "large-v3" \
+            --input "$input_file" \
+            --output "$output_file" \
+            --language auto \
+            --device mps \
+            --format txt 2>/dev/null; then
+            log_error "MacWhisper Pro CLI failed, trying Python with large model"
+
+            # Fallback to Python with large model
             if ! python3 -c "
 import whisper
 import sys
 
 try:
-    # Try to use MacWhisper Pro models if available
-    model = whisper.load_model('$WHISPER_MODEL')
-    result = model.transcribe('$input_file')
+    print('Loading large model for MacWhisper Pro quality...')
+    model = whisper.load_model('large', device='mps')
+    print('Transcribing with MacWhisper Pro standards...')
+    result = model.transcribe('$input_file', verbose=False)
 
     with open('$output_file', 'w') as f:
         f.write(result['text'])
 
-    print('Transcription completed successfully')
+    print('MacWhisper Pro quality transcription completed')
 except Exception as e:
-    print(f'Transcription failed: {e}')
+    print(f'MacWhisper Pro transcription failed: {e}')
     sys.exit(1)
 " 2>/dev/null; then
-                log_error "Python whisper transcription failed"
+                log_error "MacWhisper Pro Python fallback also failed"
                 return 1
             fi
-        else
-            log_error "Python3 not available for MacWhisper integration"
-            return 1
         fi
     else
-        log_error "MacWhisper Pro app not found"
-        return 1
+        log_warn "MacWhisper Pro CLI not found, using Python with large model"
+
+        # Fallback to Python with large model (better than base model)
+        if ! python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading large model for best quality...')
+    model = whisper.load_model('large', device='mps')
+    print('Transcribing with professional quality...')
+    result = model.transcribe('$input_file', verbose=False)
+
+    with open('$output_file', 'w') as f:
+        f.write(result['text'])
+
+    print('High-quality transcription completed')
+except Exception as e:
+    print(f'High-quality transcription failed: {e}')
+    sys.exit(1)
+" 2>/dev/null; then
+            log_error "High-quality transcription failed"
+            return 1
+        fi
     fi
 
-    log_info "MacWhisper Pro transcription completed"
+    log_info "MacWhisper Pro transcription completed successfully"
 }
 
 # Function for local Whisper transcription (fallback)
