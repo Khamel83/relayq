@@ -17,12 +17,19 @@ fi
 # Default values
 ASR_BACKEND="${ASR_BACKEND:-local}"
 WHISPER_MODEL="${WHISPER_MODEL:-base}"
-WHISPER_MODEL_PATH="${WHISPER_MODEL_PATH:-/opt/models/whisper}"
+WHISPER_MODEL_PATH="${WHISPER_MODEL_PATH:-/opt/models}"
 AI_API_KEY="${AI_API_KEY:-}"
 OPENAI_API_KEY="${OPENAI_API_KEY:-}"
 ROUTER_API_KEY="${ROUTER_API_KEY:-}"
 ROUTER_BASE_URL="${ROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
 ROUTER_MODEL="${ROUTER_MODEL:-openai/whisper-1}"
+
+# Handle OpenRouter keys (comma-separated)
+if [[ -n "${OPENROUTER_KEYS:-}" ]]; then
+    # Use first key for this transcription
+    ROUTER_API_KEY="${OPENROUTER_KEYS%%,*}"
+    log_info "Using OpenRouter API for transcription"
+fi
 
 # Logging functions
 log_info() {
@@ -76,7 +83,7 @@ download_file() {
     local dest_path="$dest_dir/$filename"
 
     log_info "Downloading from: $url"
-    if ! curl -L -o "$dest_path" --fail --show-error --silent "$url"; then
+    if ! curl -L -o "$dest_path" --fail --show-error "$url"; then
         log_error "Failed to download file from: $url"
         return 1
     fi
@@ -86,6 +93,13 @@ download_file() {
     # Verify file exists and has content
     if [[ ! -f "$dest_path" || ! -s "$dest_path" ]]; then
         log_error "Downloaded file is empty or missing: $dest_path"
+        return 1
+    fi
+
+    # Check if it's actually an audio file (not HTML)
+    if file "$dest_path" | grep -q "HTML"; then
+        log_error "Downloaded file is HTML, not audio. URL may need direct audio link."
+        log_error "Try using yt-dlp to get direct audio URL first."
         return 1
     fi
 
