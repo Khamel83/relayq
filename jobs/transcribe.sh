@@ -4,6 +4,19 @@
 
 set -euo pipefail
 
+# Define logging functions first (before they're used)
+log_info() {
+    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+}
+
+log_warn() {
+    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+}
+
+log_error() {
+    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
+}
+
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TEMP_BASE="/tmp"
@@ -31,18 +44,7 @@ if [[ -n "${OPENROUTER_KEYS:-}" ]]; then
     log_info "Using OpenRouter API for transcription"
 fi
 
-# Logging functions
-log_info() {
-    echo "[INFO] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
-}
-
-log_warn() {
-    echo "[WARN] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
-}
-
-log_error() {
-    echo "[ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $1" >&2
-}
+# Logging functions defined at top of file
 
 # Cleanup function
 cleanup() {
