@@ -1,0 +1,83 @@
+name: Simple Transcription Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe'
+        required: true
+        type: string
+
+jobs:
+  transcribe-simple:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Load environment
+        run: |
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+          fi
+
+      - name: Direct transcription test
+        run: |
+          echo "=== SIMPLE TRANSCRIPTION TEST ==="
+          echo "URL: ${{ inputs.url }}"
+
+          # Create output directory
+          mkdir -p /tmp/relayq-outputs
+
+          # Download with yt-dlp
+          echo "Downloading audio..."
+          cd /tmp
+          yt-dlp -f "bestaudio" -o "podcast.mp3" --no-playlist "${{ inputs.url }}"
+
+          # Check if file exists
+          if [[ -f "podcast.mp3" ]]; then
+            echo "✓ Audio downloaded: $(ls -lh podcast.mp3)"
+
+            # Try simple transcription
+            echo "Starting transcription..."
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('Loading Whisper model...')
+    model = whisper.load_model('base')
+    print('Transcribing audio file...')
+    result = model.transcribe('podcast.mp3')
+
+    with open('/tmp/relayq-outputs/transcript.txt', 'w') as f:
+        f.write(result['text'])
+
+    print('✓ Transcription completed successfully')
+    print(f'Length: {len(result[\"text\"])} characters')
+
+except Exception as e:
+    print(f'❌ Transcription failed: {e}')
+    sys.exit(1)
+"
+
+            if [[ -f "/tmp/relayq-outputs/transcript.txt" ]]; then
+              echo "=== TRANSCRIPT RESULTS ==="
+              cat /tmp/relayq-outputs/transcript.txt
+              echo "=== END TRANSCRIPT ==="
+            else
+              echo "❌ No transcript file created"
+            fi
+          else
+            echo "❌ Failed to download audio"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          cd /tmp
+          rm -f podcast.mp3
+          rm -rf /tmp/relayq-outputs
