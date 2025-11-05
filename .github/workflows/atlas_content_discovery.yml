@@ -1,0 +1,662 @@
+name: Atlas Content Discovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Discovery task type'
+        required: true
+        type: choice
+        options:
+        - channel-monitor
+        - playlist-scan
+        - rss-monitor
+        - reddit-monitor
+        - import-list
+        - cleanup-duplicates
+      source_url:
+        description: 'URL to monitor (channel, playlist, RSS feed, etc.)'
+        required: false
+        type: string
+      keywords:
+        description: 'Keywords to search for (comma-separated)'
+        required: false
+        type: string
+      max_age_days:
+        description: 'Maximum age of content to process (days)'
+        required: false
+        type: string
+        default: '7'
+      auto_process:
+        description: 'Automatically process discovered content'
+        required: false
+        type: boolean
+        default: false
+
+  schedule:
+    # Run content discovery every 6 hours
+    - cron: '0 */6 * * *'
+
+jobs:
+  content-discovery:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 60
+
+    steps:
+      - name: Setup Discovery Environment
+        run: |
+          echo "=== ATLAS CONTENT DISCOVERY ==="
+          echo "🔍 Task: ${{ inputs.task }}"
+          echo "🌐 Source: ${{ inputs.source_url }}"
+          echo "🔑 Keywords: ${{ inputs.keywords }}"
+          echo "📅 Max Age: ${{ inputs.max_age_days }} days"
+          echo "🤖 Auto Process: ${{ inputs.auto_process }}"
+          echo ""
+
+          # Create discovery workspace
+          DISCOVERY_ID="discovery-$(date +%Y%m%d-%H%M%S)"
+          WORKSPACE="/tmp/atlas-discovery/$DISCOVERY_ID"
+          mkdir -p "$WORKSPACE"/{discovered,processed,metadata}
+          echo "✅ Discovery workspace: $WORKSPACE"
+
+          cd "$WORKSPACE"
+
+          # Load environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✅ Environment loaded"
+          fi
+
+      - name: Channel Monitoring
+        if: inputs.task == 'channel-monitor'
+        run: |
+          echo "📺 Monitoring YouTube channel..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          # Extract channel ID from URL
+          CHANNEL_URL="${{ inputs.source_url }}"
+          if [[ "$CHANNEL_URL" =~ youtube\.com/@([^/]+) ]]; then
+            CHANNEL_HANDLE="${BASH_REMATCH[1]}"
+            CHANNEL_ID=$(curl -s "https://youtube.com/@${CHANNEL_HANDLE}" | grep -o '"channelId":"[^"]*"' | head -1 | cut -d'"' -f4)
+          elif [[ "$CHANNEL_URL" =~ youtube\.com/channel/([^/]+) ]]; then
+            CHANNEL_ID="${BASH_REMATCH[1]}"
+          else
+            echo "❌ Could not extract channel ID from URL"
+            exit 1
+          fi
+
+          echo "🎬 Monitoring Channel ID: $CHANNEL_ID"
+
+          # Get recent uploads
+          python3 -c "
+import requests
+import json
+import datetime
+import urllib.parse
+
+def get_channel_uploads(channel_id, max_age_days=7):
+    '''Get recent uploads from a YouTube channel'''
+
+    # Get channel's uploads playlist
+    channel_url = f'https://www.googleapis.com/youtube/v3/channels'
+    params = {
+        'part': 'contentDetails',
+        'id': channel_id,
+        'key': 'YOUR_YOUTUBE_API_KEY'  # You'll need to add this
+    }
+
+    # For now, use yt-dlp to get recent uploads
+    import subprocess
+
+    channel_videos = []
+    try:
+        result = subprocess.run([
+            'yt-dlp',
+            '--flat-playlist',
+            '--print', '%(id)s',
+            f'https://www.youtube.com/channel/{channel_id}/videos'
+        ], capture_output=True, text=True)
+
+        if result.returncode == 0:
+            video_ids = result.stdout.strip().split('\n')
+            print(f'📋 Found {len(video_ids)} videos in channel')
+
+            # Get video details for recent videos
+            max_age_timestamp = (datetime.datetime.now() - datetime.timedelta(days=${{ inputs.max_age_days }})).timestamp()
+
+            for i, video_id in enumerate(video_ids[:50]):  # Limit to 50 most recent
+                try:
+                    video_url = f'https://www.youtube.com/watch?v={video_id}'
+                    info_result = subprocess.run([
+                        'yt-dlp', '--print-json', '--no-download',
+                        video_url
+                    ], capture_output=True, text=True, timeout=10)
+
+                    if info_result.returncode == 0:
+                        video_info = json.loads(info_result.stdout)
+                        upload_date = datetime.datetime.strptime(video_info['upload_date'], '%Y%m%d').timestamp()
+
+                        if upload_date > max_age_timestamp:
+                            # Check keywords if provided
+                            keywords = '${{ inputs.keywords }}'.lower().split(',') if '${{ inputs.keywords }}' else []
+                            keywords = [k.strip() for k in keywords if k.strip()]
+
+                            if keywords:
+                                title_lower = video_info['title'].lower()
+                                description_lower = video_info.get('description', '').lower()
+
+                                matches_keyword = any(
+                                    keyword in title_lower or keyword in description_lower
+                                    for keyword in keywords
+                                )
+
+                                if not matches_keyword:
+                                    continue
+
+                            channel_videos.append({
+                                'id': video_id,
+                                'title': video_info['title'],
+                                'url': f'https://www.youtube.com/watch?v={video_id}',
+                                'duration': video_info.get('duration_string', '0:00'),
+                                'upload_date': video_info['upload_date'],
+                                'view_count': video_info.get('view_count', 0),
+                                'description': video_info.get('description', '')[:200] + '...' if video_info.get('description') else ''
+                            })
+
+                            print(f'✅ Added: {video_info[\"title\"]}')
+
+                except Exception as e:
+                    print(f'⚠️  Error processing {video_id}: {e}')
+                    continue
+
+        return channel_videos
+
+    except Exception as e:
+        print(f'❌ Error getting channel uploads: {e}')
+        return []
+
+# Get videos
+videos = get_channel_uploads('${{ inputs.source_url }}')
+
+# Save discovered content
+with open('discovered/channel_videos.json', 'w') as f:
+    json.dump(videos, f, indent=2)
+
+print(f'\\n🎉 Discovered {len(videos)} recent videos')
+for video in videos[:5]:  # Show first 5
+    print(f'  📺 {video[\"title\"]} ({video[\"duration\"]})')
+
+if len(videos) > 5:
+    print(f'  ... and {len(videos) - 5} more')
+"
+
+      - name: Playlist Scanning
+        if: inputs.task == 'playlist-scan'
+        run: |
+          echo "📋 Scanning playlist..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          python3 -c "
+import subprocess
+import json
+import datetime
+
+def scan_playlist(playlist_url, max_age_days=7):
+    '''Scan playlist for recent videos'''
+
+    try:
+        result = subprocess.run([
+            'yt-dlp',
+            '--flat-playlist',
+            '--print', '%(id)s|%(title)s|%(duration)s|%(upload_date)s',
+            playlist_url
+        ], capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f'❌ Error accessing playlist: {result.stderr}')
+            return []
+
+        videos = []
+        lines = result.stdout.strip().split('\n')
+        max_age_timestamp = (datetime.datetime.now() - datetime.timedelta(days=max_age_days)).timestamp()
+
+        for line in lines:
+            if not line.strip():
+                continue
+
+            try:
+                parts = line.split('|')
+                if len(parts) >= 4:
+                    video_id, title, duration, upload_date_str = parts[:4]
+
+                    # Parse upload date
+                    upload_date = datetime.datetime.strptime(upload_date_str, '%Y%m%d').timestamp()
+
+                    if upload_date > max_age_timestamp:
+                        # Check keywords if provided
+                        keywords = '${{ inputs.keywords }}'.lower().split(',') if '${{ inputs.keywords }}' else []
+                        keywords = [k.strip() for k in keywords if k.strip()]
+
+                        if keywords:
+                            title_lower = title.lower()
+                            if not any(keyword in title_lower for keyword in keywords):
+                                continue
+
+                        videos.append({
+                            'id': video_id,
+                            'title': title,
+                            'url': f'https://www.youtube.com/watch?v={video_id}',
+                            'duration': duration,
+                            'upload_date': upload_date_str
+                        })
+
+                        print(f'✅ Found: {title}')
+
+            except Exception as e:
+                print(f'⚠️  Error parsing line: {line} - {e}')
+                continue
+
+        return videos
+
+    except Exception as e:
+        print(f'❌ Error scanning playlist: {e}')
+        return []
+
+# Scan playlist
+videos = scan_playlist('${{ inputs.source_url }}', int('${{ inputs.max_age_days }}'))
+
+# Save results
+with open('discovered/playlist_videos.json', 'w') as f:
+    json.dump(videos, f, indent=2)
+
+print(f'\\n🎉 Discovered {len(videos)} recent videos from playlist')
+"
+
+      - name: RSS Monitoring
+        if: inputs.task == 'rss-monitor'
+        run: |
+          echo "📡 Monitoring RSS feed..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          python3 -c "
+import requests
+import feedparser
+import json
+import datetime
+import re
+from urllib.parse import urlparse
+
+def monitor_rss_feed(rss_url, keywords=None, max_age_days=7):
+    '''Monitor RSS feed for new content'''
+
+    try:
+        # Parse RSS feed
+        feed = feedparser.parse(rss_url)
+
+        if feed.bozo:
+            print(f'⚠️  RSS feed warning: {feed.bozo_exception}')
+
+        items = []
+        max_age_timestamp = (datetime.datetime.now() - datetime.timedelta(days=max_age_days)).timestamp()
+
+        for entry in feed.entries:
+            try:
+                # Parse publication date
+                pub_date = None
+                if hasattr(entry, 'published_parsed') and entry.published_parsed:
+                    pub_date = datetime.datetime(*entry.published_parsed[:6])
+                elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+                    pub_date = datetime.datetime(*entry.updated_parsed[:6])
+                else:
+                    continue  # Skip if no date
+
+                # Check if recent enough
+                if pub_date.timestamp() < max_age_timestamp:
+                    continue
+
+                # Check keywords if provided
+                title_text = entry.title.lower() if hasattr(entry, 'title') else ''
+                description_text = entry.description.lower() if hasattr(entry, 'description') else ''
+
+                if keywords:
+                    if not any(keyword in title_text or keyword in description_text for keyword in keywords):
+                        continue
+
+                # Extract media URLs (YouTube, Vimeo, etc.)
+                media_urls = []
+                content = ''
+
+                # Check various fields for media URLs
+                for field in ['link', 'links', 'description', 'summary', 'content']:
+                    if hasattr(entry, field):
+                        field_value = getattr(entry, field)
+                        if isinstance(field_value, list):
+                            field_value = ' '.join(str(item) for item in field_value)
+                        elif hasattr(field_value, 'value'):
+                            field_value = field_value.value
+                        elif not isinstance(field_value, str):
+                            field_value = str(field_value)
+
+                        content += ' ' + field_value
+
+                # Find YouTube URLs
+                youtube_pattern = r'https?://(?:www\\.)?youtube\\.com/watch\\?v=[a-zA-Z0-9_-]+|https?://youtu\\.be/[a-zA-Z0-9_-]+'
+                youtube_urls = re.findall(youtube_pattern, content)
+                media_urls.extend(youtube_urls)
+
+                # Find Vimeo URLs
+                vimeo_pattern = r'https?://(?:www\\.)?vimeo\\.com/\\d+'
+                vimeo_urls = re.findall(vimeo_pattern, content)
+                media_urls.extend(vimeo_urls)
+
+                # Find other video URLs
+                video_pattern = r'https?://[^\\s]+\\.(?:mp4|avi|mov|webm|mkv)'
+                other_urls = re.findall(video_pattern, content)
+                media_urls.extend(other_urls)
+
+                if media_urls:  # Only include items with media
+                    item = {
+                        'title': entry.title if hasattr(entry, 'title') else 'No Title',
+                        'link': entry.link if hasattr(entry, 'link') else '',
+                        'published': pub_date.isoformat(),
+                        'description': entry.description[:500] + '...' if hasattr(entry, 'description') and len(entry.description) > 500 else (entry.description or ''),
+                        'media_urls': list(set(media_urls)),  # Remove duplicates
+                        'source_feed': rss_url
+                    }
+
+                    items.append(item)
+                    print(f'✅ Found: {item[\"title\"]} - {len(item[\"media_urls\"])} media URLs')
+
+            except Exception as e:
+                print(f'⚠️  Error processing RSS entry: {e}')
+                continue
+
+        return items
+
+    except Exception as e:
+        print(f'❌ Error monitoring RSS feed: {e}')
+        return []
+
+# Monitor RSS feed
+keywords = [k.strip().lower() for k in '${{ inputs.keywords }}'.split(',') if k.strip()] if '${{ inputs.keywords }}' else None
+items = monitor_rss_feed('${{ inputs.source_url }}', keywords, int('${{ inputs.max_age_days }}'))
+
+# Save results
+with open('discovered/rss_items.json', 'w') as f:
+    json.dump(items, f, indent=2)
+
+print(f'\\n🎉 Discovered {len(items)} items with media content from RSS feed')
+"
+
+      - name: Reddit Monitoring
+        if: inputs.task == 'reddit-monitor'
+        run: |
+          echo "🤖 Monitoring Reddit..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          python3 -c "
+import requests
+import json
+import datetime
+import re
+from urllib.parse import urlparse
+
+def monitor_reddit(subreddit_url, keywords=None, max_age_days=7):
+    '''Monitor Reddit for video/audio content'''
+
+    try:
+        # Extract subreddit name
+        if '/r/' in subreddit_url:
+            subreddit = subreddit_url.split('/r/')[1].split('/')[0]
+        else:
+            subreddit = subreddit_url
+
+        # Get recent posts (Reddit's public API doesn't require auth for basic access)
+        url = f'https://www.reddit.com/r/{subreddit}/hot.json?limit=100'
+        headers = {'User-Agent': 'Atlas Content Discovery Bot'}
+
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+
+        data = response.json()
+        posts = []
+        max_age_timestamp = (datetime.datetime.now() - datetime.timedelta(days=max_age_days)).timestamp()
+
+        for post in data['data']['children']:
+            post_data = post['data']
+
+            # Skip stickied posts
+            if post_data.get('stickied', False):
+                continue
+
+            # Check if recent enough
+            created_time = post_data['created_utc']
+            if created_time < max_age_timestamp:
+                continue
+
+            # Check keywords if provided
+            title = post_data['title'].lower()
+            if keywords and not any(keyword in title for keyword in keywords):
+                continue
+
+            # Look for media content
+            media_urls = []
+
+            # Check if post has media
+            if post_data.get('is_video'):
+                # Reddit video
+                media_urls.append(post_data['url'])
+
+            # Check for links in post
+            if 'url' in post_data and post_data['url'] != post_data['permalink']:
+                post_url = post_data['url']
+
+                # Check for common video/audio platforms
+                video_patterns = [
+                    r'https?://(?:www\\.)?youtube\\.com/watch\\?v=[a-zA-Z0-9_-]+',
+                    r'https?://youtu\\.be/[a-zA-Z0-9_-]+',
+                    r'https?://(?:www\\.)?vimeo\\.com/\\d+',
+                    r'https?://(?:www\\.)?soundcloud\\.com/[^\\s]+',
+                    r'https?://bandcamp\\.com/[^\\s]+',
+                    r'https?://[^\\s]+\\.(?:mp4|avi|mov|webm|mkv|mp3|m4a|wav|flac)'
+                ]
+
+                for pattern in video_patterns:
+                    if re.search(pattern, post_url):
+                        media_urls.append(post_url)
+                        break
+
+            # Check for media in text content
+            if 'selftext' in post_data and post_data['selftext']:
+                text_content = post_data['selftext']
+                for pattern in video_patterns:
+                    matches = re.findall(pattern, text_content)
+                    media_urls.extend(matches)
+
+            # Only include posts with media
+            if media_urls:
+                post_info = {
+                    'title': post_data['title'],
+                    'url': post_data['url'],
+                    'permalink': f'https://reddit.com{post_data[\"permalink\"]}',
+                    'subreddit': subreddit,
+                    'created_utc': created_time,
+                    'created_date': datetime.datetime.fromtimestamp(created_time).isoformat(),
+                    'score': post_data['score'],
+                    'num_comments': post_data['num_comments'],
+                    'media_urls': list(set(media_urls)),
+                    'is_reddit_video': post_data.get('is_video', False),
+                    'selftext': post_data['selftext'][:500] + '...' if post_data['selftext'] and len(post_data['selftext']) > 500 else (post_data['selftext'] or '')
+                }
+
+                posts.append(post_info)
+                print(f'✅ Found: {post_data[\"title\"]} - {len(media_urls)} media URLs')
+
+        return posts
+
+    except Exception as e:
+        print(f'❌ Error monitoring Reddit: {e}')
+        return []
+
+# Monitor Reddit
+keywords = [k.strip().lower() for k in '${{ inputs.keywords }}'.split(',') if k.strip()] if '${{ inputs.keywords }}' else None
+posts = monitor_reddit('${{ inputs.source_url }}', keywords, int('${{ inputs.max_age_days }}'))
+
+# Save results
+with open('discovered/reddit_posts.json', 'w') as f:
+    json.dump(posts, f, indent=2)
+
+print(f'\\n🎉 Discovered {len(posts)} Reddit posts with media content')
+"
+
+      - name: Auto Process Discovered Content
+        if: inputs.auto_process == 'true'
+        run: |
+          echo "🤖 Auto-processing discovered content..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          # Find all JSON files with discovered content
+          for json_file in discovered/*.json; do
+            if [[ -f "$json_file" ]]; then
+              echo "📋 Processing: $(basename "$json_file")"
+
+              python3 -c "
+import json
+import os
+import sys
+
+def process_discovered_file(json_file):
+    '''Process discovered content file'''
+
+    try:
+        with open(json_file, 'r') as f:
+            data = json.load(f)
+
+        if not isinstance(data, list):
+            print(f'⚠️  {json_file} does not contain a list')
+            return
+
+        # Extract media URLs
+        urls_to_process = []
+        for item in data[:3]:  # Limit to first 3 items per run
+            if isinstance(item, dict):
+                # Handle different data structures
+                if 'url' in item:
+                    urls_to_process.append(item['url'])
+                elif 'media_urls' in item:
+                    urls_to_process.extend(item['media_urls'])
+                elif isinstance(item, str):
+                    urls_to_process.append(item)
+
+        # Remove duplicates and filter for valid URLs
+        unique_urls = list(set(urls_to_process))
+        video_urls = [url for url in unique_urls if any(platform in url for platform in ['youtube.com', 'youtu.be', 'vimeo.com', 'soundcloud.com'])]
+
+        print(f'🎬 Found {len(video_urls)} video URLs to process')
+
+        # Save URLs for processing
+        with open('processed/urls_to_process.txt', 'w') as f:
+            for url in video_urls:
+                f.write(url + '\\n')
+
+        print(f'✅ Saved {len(video_urls)} URLs for processing')
+
+    except Exception as e:
+        print(f'❌ Error processing {json_file}: {e}')
+
+process_discovered_file('$json_file')
+"
+            fi
+          done
+
+          # Trigger processing if URLs found
+          if [[ -f "processed/urls_to_process.txt" ]] && [[ -s "processed/urls_to_process.txt" ]]; then
+            URL_COUNT=$(wc -l < processed/urls_to_process.txt)
+            echo "🚀 Triggering processing for $URL_COUNT discovered URLs..."
+
+            # Process first URL as example
+            FIRST_URL=$(head -1 processed/urls_to_process.txt)
+            echo "📺 Processing first URL: $FIRST_URL"
+
+            # You could trigger the video processor workflow here
+            echo "🔄 Would trigger Atlas Video Processor for: $FIRST_URL"
+          else
+            echo "ℹ️ No URLs found to auto-process"
+          fi
+
+      - name: Create Discovery Report
+        run: |
+          echo "📋 Creating discovery report..."
+          cd /tmp/atlas-discovery/discovery-*
+
+          python3 -c "
+import json
+import os
+from datetime import datetime
+
+# Collect all discovered content
+report = {
+    'discovery_id': '$(basename $(pwd))',
+    'task': '${{ inputs.task }}',
+    'source_url': '${{ inputs.source_url }}',
+    'keywords': '${{ inputs.keywords }}',
+    'max_age_days': '${{ inputs.max_age_days }}',
+    'auto_process': '${{ inputs.auto_process }}',
+    'timestamp': datetime.now().isoformat(),
+    'results': {}
+}
+
+# Process each discovery file
+for filename in os.listdir('discovered'):
+    if filename.endswith('.json'):
+        try:
+            with open(f'discovered/{filename}', 'r') as f:
+                data = json.load(f)
+
+            if isinstance(data, list):
+                report['results'][filename] = {
+                    'count': len(data),
+                    'sample_items': data[:3]  # First 3 items as sample
+                }
+                print(f'📊 {filename}: {len(data)} items')
+
+        except Exception as e:
+            print(f'⚠️  Error processing {filename}: {e}')
+
+# Check for auto-process URLs
+if os.path.exists('processed/urls_to_process.txt'):
+    with open('processed/urls_to_process.txt', 'r') as f:
+        urls = [line.strip() for line in f if line.strip()]
+        report['urls_to_process'] = {
+            'count': len(urls),
+            'sample_urls': urls[:5]
+        }
+
+# Save report
+with open('discovery_report.json', 'w') as f:
+    json.dump(report, f, indent=2)
+
+# Print summary
+total_items = sum(result.get('count', 0) for result in report['results'].values())
+auto_process_count = report.get('urls_to_process', {}).get('count', 0)
+
+print(f'\\n🎉 DISCOVERY COMPLETE')
+print(f'📋 Task: ${{ inputs.task }}')
+print(f'🔍 Total items found: {total_items}')
+print(f'🚀 URLs to process: {auto_process_count}')
+print(f'📁 Discovery ID: $(basename $(pwd))')
+"
+
+      - name: Upload Discovery Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: atlas-discovery-$(basename $(ls /tmp/atlas-discovery/))
+          path: /tmp/atlas-discovery/discovery-*/
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          rm -rf /tmp/atlas-discovery/discovery-*

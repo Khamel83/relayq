@@ -1,0 +1,428 @@
+name: Atlas System Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'System management task'
+        required: true
+        type: choice
+        options:
+        - health-check
+        - storage-cleanup
+        - performance-benchmark
+        - software-update
+        - backup-configs
+        - monitor-resources
+        - database-maintenance
+        - security-scan
+      storage_threshold:
+        description: 'Storage cleanup threshold (GB)'
+        required: false
+        type: string
+        default: '100'
+      backup_location:
+        description: 'Backup location'
+        required: false
+        type: string
+        default: 'local'
+
+  schedule:
+    # Daily health check at 2 AM
+    - cron: '0 2 * * *'
+    # Weekly storage cleanup on Sunday at 3 AM
+    - cron: '0 3 * * 0'
+
+jobs:
+  system-management:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 60
+
+    steps:
+      - name: System Health Check
+        if: inputs.task == 'health-check'
+        run: |
+          echo "=== SYSTEM HEALTH CHECK ==="
+          echo ""
+
+          # System Information
+          echo "🖥️  System Information:"
+          echo "macOS Version: $(sw_vers -productVersion)"
+          echo "Hardware: $(system_profiler SPHardwareDataType | grep "Model Name" | cut -d: -f2 | xargs)"
+          echo "Memory: $(system_profiler SPHardwareDataType | grep "Memory" | cut -d: -f2 | xargs)"
+          echo ""
+
+          # Disk Usage
+          echo "💾 Disk Usage:"
+          df -h | grep -E "(Filesystem|/dev/)" | head -5
+          echo ""
+
+          # CPU Usage
+          echo "⚡ CPU Usage:"
+          top -l 1 | grep "CPU usage" | awk '{print $3, $5, $7}'
+          echo ""
+
+          # Memory Usage
+          echo "🧠 Memory Usage:"
+          vm_stat | head -10
+          echo ""
+
+          # Network Status
+          echo "🌐 Network Status:"
+          ifconfig en0 | grep -E "(status|inet)"
+          echo ""
+
+          # Running Processes
+          echo "🔄 Related Processes:"
+          ps aux | grep -E "(ffmpeg|yt-dlp|whisper|github)" | head -5
+          echo ""
+
+          # Service Status
+          echo "🛠️  Software Status:"
+          command -v ffmpeg &>/dev/null && echo "✅ FFmpeg: $(ffmpeg -version | head -1)" || echo "❌ FFmpeg not found"
+          command -v yt-dlp &>/dev/null && echo "✅ yt-dlp: $(yt-dlp --version)" || echo "❌ yt-dlp not found"
+          command -v python3 &>/dev/null && echo "✅ Python: $(python3 --version)" || echo "❌ Python not found"
+          command -v gh &>/dev/null && echo "✅ GitHub CLI: $(gh --version)" || echo "❌ GitHub CLI not found"
+          echo ""
+
+          # RelayQ Specific Checks
+          echo "🎯 RelayQ Status:"
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            echo "✅ Environment file found"
+            source "$HOME/.config/relayq/env"
+            echo "✅ ASR Backend: ${ASR_BACKEND:-not set}"
+            echo "✅ Whisper Model: ${WHISPER_MODEL:-not set}"
+          else
+            echo "❌ Environment file not found"
+          fi
+
+          if [[ -d "/Applications/MacWhisper.app" ]]; then
+            echo "✅ MacWhisper Pro installed"
+          else
+            echo "❌ MacWhisper Pro not found"
+          fi
+
+      - name: Storage Cleanup
+        if: inputs.task == 'storage-cleanup'
+        run: |
+          echo "=== STORAGE CLEANUP ==="
+          echo ""
+
+          THRESHOLD_GB="${{ inputs.storage_threshold }}"
+          echo "🧹 Cleaning up files older than threshold (>${THRESHOLD_GB}GB)..."
+          echo ""
+
+          # Check current storage usage
+          echo "💾 Current Storage Usage:"
+          df -h /
+          echo ""
+
+          # Clean up temporary files
+          echo "🗑️  Cleaning temporary files..."
+          echo "Before: $(du -sh /tmp 2>/dev/null || echo "0B")"
+
+          # Clean RelayQ temp files
+          if [[ -d "/tmp" ]]; then
+            find /tmp -name "relayq-*" -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+            find /tmp -name "atlas-*" -type d -mtime +1 -exec rm -rf {} + 2>/dev/null || true
+            find /tmp -name "*.tmp" -mtime +1 -delete 2>/dev/null || true
+          fi
+
+          echo "After: $(du -sh /tmp 2>/dev/null || echo "0B")"
+          echo ""
+
+          # Clean up downloads
+          if [[ -d "$HOME/Downloads" ]]; then
+            echo "📁 Cleaning Downloads folder..."
+            echo "Downloads before: $(du -sh "$HOME/Downloads" 2>/dev/null || echo "0B")"
+
+            find "$HOME/Downloads" -name "*.mp4" -mtime +7 -delete 2>/dev/null || true
+            find "$HOME/Downloads" -name "*.mkv" -mtime +7 -delete 2>/dev/null || true
+            find "$HOME/Downloads" -name "*.avi" -mtime +7 -delete 2>/dev/null || true
+            find "$HOME/Downloads" -name "*.tmp" -mtime +1 -delete 2>/dev/null || true
+
+            echo "Downloads after: $(du -sh "$HOME/Downloads" 2>/dev/null || echo "0B")"
+          fi
+
+          # Clean up Python cache
+          echo "🐍 Cleaning Python cache..."
+          find /Users -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+          find /Users -name "*.pyc" -delete 2>/dev/null || true
+
+          # Clean up old logs
+          echo "📋 Cleaning old logs..."
+          find /Users -name "*.log" -mtime +30 -delete 2>/dev/null || true
+
+          echo ""
+          echo "✅ Storage cleanup completed"
+
+      - name: Performance Benchmark
+        if: inputs.task == 'performance-benchmark'
+        run: |
+          echo "=== PERFORMANCE BENCHMARK ==="
+          echo ""
+
+          # CPU Benchmark
+          echo "⚡ CPU Benchmark:"
+          START_TIME=$(date +%s)
+          python3 -c "
+import time
+import math
+
+# CPU-intensive calculation
+start = time.time()
+result = sum(math.sqrt(i) for i in range(1000000))
+end = time.time()
+print(f'CPU Benchmark: {end - start:.3f} seconds')
+print(f'Result: {result:.0f}')
+"
+          END_TIME=$(date +%s)
+          CPU_TIME=$((END_TIME - START_TIME))
+          echo "System CPU time: ${CPU_TIME}s"
+          echo ""
+
+          # Memory Test
+          echo "🧠 Memory Benchmark:"
+          python3 -c "
+import time
+import sys
+
+# Memory allocation test
+start = time.time()
+data = []
+for i in range(1000000):
+    data.append(i * 2)
+end = time.time()
+
+print(f'Memory Allocation: {(end - start):.3f} seconds')
+print(f'Memory used: {sys.getsizeof(data) / 1024 / 1024:.1f} MB')
+
+# Memory access test
+start = time.time()
+total = sum(data)
+end = time.time()
+
+print(f'Memory Access: {(end - start):.3f} seconds')
+print(f'Sum result: {total}')
+"
+          echo ""
+
+          # Disk Speed Test
+          echo "💾 Disk Speed Test:"
+          TEST_FILE="/tmp/disktest.tmp"
+          START_TIME=$(date +%s)
+          dd if=/dev/zero of="$TEST_FILE" bs=1M count=100 2>/dev/null
+          END_TIME=$(date +%s)
+          WRITE_TIME=$((END_TIME - START_TIME))
+          rm -f "$TEST_FILE"
+          echo "Write Speed (100MB): ${WRITE_TIME}s ($((100 / WRITE_TIME)) MB/s)"
+          echo ""
+
+          # Network Speed Test
+          echo "🌐 Network Speed Test:"
+          if command -v curl &>/dev/null; then
+            START_TIME=$(date +%s)
+            DOWNLOAD_SIZE=$(curl -s -o /dev/null -w '%{size_download}' https://proof.ovh.net/files/100Mb.dat 2>/dev/null || echo "0")
+            END_TIME=$(date +%s)
+            DOWNLOAD_TIME=$((END_TIME - START_TIME))
+            if [[ $DOWNLOAD_TIME -gt 0 ]]; then
+              echo "Download Speed: $((DOWNLOAD_SIZE / 1024 / 1024 / DOWNLOAD_TIME)) MB/s"
+            else
+              echo "Network test failed"
+            fi
+          else
+            echo "curl not available for network test"
+          fi
+
+      - name: Software Update Check
+        if: inputs.task == 'software-update'
+        run: |
+          echo "=== SOFTWARE UPDATE CHECK ==="
+          echo ""
+
+          # Check for Homebrew updates
+          if command -v brew &>/dev/null; then
+            echo "🍺 Homebrew Updates:"
+            echo "Checking for outdated packages..."
+            brew outdated
+            echo ""
+
+            echo "Available updates:"
+            brew outdated --formula
+            echo ""
+          fi
+
+          # Check Python packages
+          echo "🐍 Python Package Updates:"
+          pip3 list --outdated --format=columns 2>/dev/null || echo "pip list command not available"
+          echo ""
+
+          # Check yt-dlp updates
+          if command -v yt-dlp &>/dev/null; then
+            echo "📥 yt-dlp Update Check:"
+            CURRENT_VERSION=$(yt-dlp --version)
+            echo "Current version: $CURRENT_VERSION"
+
+            # Check if update available (this would require network access)
+            echo "Run 'pip install --upgrade yt-dlp' to update"
+            echo ""
+          fi
+
+          # Check FFmpeg
+          if command -v ffmpeg &>/dev/null; then
+            echo "🎬 FFmpeg Version:"
+            ffmpeg -version | head -1
+            echo ""
+          fi
+
+          # Check GitHub CLI
+          if command -v gh &>/dev/null; then
+            echo "🐙 GitHub CLI Version:"
+            gh --version
+            echo ""
+          fi
+
+      - name: Monitor Resources
+        if: inputs.task == 'monitor-resources'
+        run: |
+          echo "=== RESOURCE MONITORING ==="
+          echo ""
+
+          # Real-time monitoring
+          echo "📊 Current Resource Usage:"
+          echo ""
+
+          # CPU usage
+          echo "⚡ CPU Usage:"
+          top -l 1 -s 0 | grep -E "(CPU usage|Load)"
+          echo ""
+
+          # Memory usage
+          echo "🧠 Memory Usage:"
+          echo "Memory Pressure:"
+          memory_pressure | grep "System-wide memory free percentage"
+          echo ""
+
+          # Disk usage by directory
+          echo "💾 Disk Usage by Directory:"
+          du -sh /Users/* 2>/dev/null | sort -hr | head -10
+          echo ""
+
+          # Network connections
+          echo "🌐 Network Connections:"
+          netstat -an | grep ESTABLISHED | wc -l | xargs echo "Active connections:"
+          echo ""
+
+          # Process monitoring
+          echo "🔄 Top Processes by CPU:"
+          ps aux | sort -rk 3 | head -6
+          echo ""
+
+          echo "🔄 Top Processes by Memory:"
+          ps aux | sort -rk 4 | head -6
+          echo ""
+
+          # Temperature (if available)
+          if command -v powermetrics &>/dev/null; then
+            echo "🌡️ Temperature (brief check):"
+            sudo powermetrics --samplers smc -n 1 -i 1 | grep "CPU Core" | head -3 2>/dev/null || echo "Temperature info not available"
+          fi
+
+          # Storage health
+          echo "💾 Storage Health:"
+          diskutil list | grep "synthetic"
+          echo ""
+
+      - name: Create System Report
+        run: |
+          echo "=== SYSTEM REPORT ==="
+          echo ""
+
+          REPORT_DIR="/tmp/atlas-system-report"
+          mkdir -p "$REPORT_DIR"
+          REPORT_FILE="$REPORT_DIR/system_report_$(date +%Y%m%d_%H%M%S).json"
+
+          python3 -c "
+import json
+import subprocess
+import os
+import platform
+from datetime import datetime
+
+def run_command(cmd, capture_output=True):
+    '''Run command and return output'''
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=capture_output, text=True, timeout=10)
+        return result.stdout.strip() if capture_output else result.returncode == 0
+    except:
+        return None
+
+# Gather system information
+report = {
+    'timestamp': datetime.now().isoformat(),
+    'system': {
+        'os_version': platform.mac_ver()[0],
+        'machine': platform.machine(),
+        'processor': platform.processor(),
+        'hostname': os.uname()[1]
+    },
+    'hardware': {},
+    'software': {},
+    'performance': {},
+    'storage': {}
+}
+
+# Hardware info
+try:
+    hw_info = run_command('system_profiler SPHardwareDataType')
+    report['hardware']['model'] = hw_info
+except:
+    pass
+
+# Software versions
+software = {}
+for cmd, name in [
+    ('ffmpeg -version | head -1', 'ffmpeg'),
+    ('yt-dlp --version', 'yt-dlp'),
+    ('python3 --version', 'python'),
+    ('gh --version', 'github_cli')
+]:
+    output = run_command(cmd)
+    if output:
+        software[name] = output
+report['software'] = software
+
+# Disk usage
+try:
+    df_output = run_command('df -h')
+    report['storage']['disk_usage'] = df_output
+except:
+    pass
+
+# Memory info
+try:
+    vm_stat_output = run_command('vm_stat')
+    report['performance']['memory_stats'] = vm_stat_output
+except:
+    pass
+
+# Save report
+with open('$REPORT_FILE', 'w') as f:
+    json.dump(report, f, indent=2)
+
+print(f'📋 System report saved to: $REPORT_FILE')
+print(f'📊 Report size: {os.path.getsize(\"$REPORT_FILE\")} bytes')
+"
+
+      - name: Upload System Report
+        uses: actions/upload-artifact@v4
+        if: always() && inputs.task != 'health-check'
+        with:
+          name: atlas-system-report-$(date +%Y%m%d_%H%M%S)
+          path: /tmp/atlas-system-report/
+          retention-days: 30
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/atlas-system-report
