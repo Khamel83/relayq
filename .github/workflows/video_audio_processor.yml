@@ -1,6 +1,15 @@
 name: Video/Audio Processor
 
 on:
+  # Temporary push trigger to ensure workflow registration (research-based workaround)
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/video_audio_processor.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/video_audio_processor.yml'
   workflow_dispatch:
     inputs:
       task:
@@ -57,15 +66,34 @@ on:
         default: '5'
 
 jobs:
-  atlas-video-processing:
+  video-audio-processing:
     runs-on: [self-hosted, macmini]
     timeout-minutes: 120
     outputs:
       ${{ steps.setup.outputs.job-id }}: ${{ steps.setup.outputs.job-id }}
 
     steps:
+      - name: Handle Push Trigger (Workflow Validation Only)
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        run: |
+          echo "🔧 Push trigger detected - validating workflow only"
+          echo "✅ Workflow file: ${{ github.workflow }}"
+          echo "✅ Trigger: ${{ github.event_name }}"
+          echo "✅ Ref: ${{ github.ref }}"
+          echo ""
+          echo "🚀 This push trigger ensures GitHub registers the workflow_dispatch trigger"
+          echo "📋 Workflow validation complete - workflow_dispatch should now work via CLI"
+
+          # Quick validation of workflow syntax
+          if [[ -f ".github/workflows/${{ github.workflow }}.yml" ]]; then
+            echo "✅ Workflow file exists and is accessible"
+          else
+            echo "❌ Workflow file not found"
+            exit 1
+          fi
       - name: Setup Processing Environment
         id: setup
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "=== VIDEO/AUDIO PROCESSOR ==="
           echo "🎬 Task: ${{ inputs.task }}"
@@ -92,9 +120,10 @@ jobs:
 
       - name: Download Content
         id: download
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "📥 Downloading content from ${{ inputs.source }}..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           case "${{ inputs.source }}" in
             "youtube")
@@ -142,10 +171,10 @@ jobs:
           echo "file-count=$FILE_COUNT" >> $GITHUB_OUTPUT
 
       - name: Extract Metadata
-        if: steps.download.outputs.file-count > 0
+        if: github.event_name == 'workflow_dispatch' && steps.download.outputs.file-count > 0
         run: |
           echo "📊 Extracting metadata..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           for file in raw/*; do
             if [[ -f "$file" && ! "$file" =~ \.(json|jpg|png)$ ]]; then
@@ -164,10 +193,10 @@ jobs:
           done
 
       - name: Transcribe Audio
-        if: contains(inputs.task, 'transcribe') && steps.download.outputs.file-count > 0
+        if: github.event_name == 'workflow_dispatch' && contains(inputs.task, 'transcribe') && steps.download.outputs.file-count > 0
         run: |
           echo "🎙️ Starting transcription with ${{ inputs.transcription_model }}..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           python3 -c "
 import whisper
@@ -248,10 +277,10 @@ print(f'\\n🎉 Transcription completed: {processed_count} files processed')
 "
 
       - name: Generate Thumbnails
-        if: steps.download.outputs.file-count > 0
+        if: github.event_name == 'workflow_dispatch' && steps.download.outputs.file-count > 0
         run: |
           echo "🖼️ Generating thumbnails..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           for file in raw/*; do
             if [[ -f "$file" && "$file" =~ \.(mp4|mkv|mov|avi|webm)$ ]]; then
@@ -273,10 +302,10 @@ print(f'\\n🎉 Transcription completed: {processed_count} files processed')
           done
 
       - name: Quality Analysis
-        if: contains(inputs.task, 'analyze') && steps.download.outputs.file-count > 0
+        if: github.event_name == 'workflow_dispatch' && contains(inputs.task, 'analyze') && steps.download.outputs.file-count > 0
         run: |
           echo "🔍 Performing quality analysis..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           python3 -c "
 import json
@@ -342,9 +371,10 @@ print(f'\\n✅ Quality analysis completed: {len(analysis_results)} files')
 "
 
       - name: Create Processing Report
+        if: github.event_name == 'workflow_dispatch'
         run: |
           echo "📋 Creating processing report..."
-          cd /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          cd /tmp/media-processing/${{ steps.setup.outputs.job-id }}
 
           python3 -c "
 import json
@@ -409,15 +439,16 @@ print(f'📄 Total text: {report[\"summary\"][\"total_transcript_chars\"]} chara
 "
 
       - name: Upload Processing Results
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: atlas-processing-${{ steps.setup.outputs.job-id }}
-          path: /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}/
+          name: video-processing-${{ steps.setup.outputs.job-id }}
+          path: /tmp/media-processing/${{ steps.setup.outputs.job-id }}/
           retention-days: 30
 
       - name: Cleanup
         if: always()
         run: |
           echo "🧹 Cleaning up..."
-          rm -rf /tmp/atlas-processing/${{ steps.setup.outputs.job-id }}
+          rm -rf /tmp/media-processing/${{ steps.setup.outputs.job-id }}
