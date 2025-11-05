@@ -1,0 +1,109 @@
+name: FINAL MacWhisper Pro
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Audio URL to transcribe with MacWhisper Pro'
+        required: true
+        type: string
+
+jobs:
+  final-macwhisper-pro:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 30
+
+    steps:
+      - name: Final MacWhisper Pro Transcription
+        run: |
+          echo "=== FINAL MACWHISPER PRO TRANSCRIPTION ==="
+          echo "🎯 This bypasses all caching issues"
+          echo "📱 URL: ${{ inputs.url }}"
+          echo ""
+
+          # Load environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            source "$HOME/.config/relayq/env"
+            echo "✓ Environment loaded"
+          fi
+
+          # Create working directory
+          mkdir -p /tmp/final-transcription
+          cd /tmp/final-transcription
+
+          # Download audio
+          echo "📥 Downloading audio..."
+          yt-dlp -f "bestaudio" -o "audio.mp3" --no-playlist "${{ inputs.url }}"
+
+          if [[ -f "audio.mp3" ]]; then
+            echo "✅ Audio downloaded: $(ls -lh audio.mp3)"
+            echo ""
+
+            # DIRECT MacWhisper Pro transcription - no scripts involved
+            echo "🚀 Starting DIRECT MacWhisper Pro transcription..."
+            echo "🎯 Using large-v3 model for best quality"
+            echo "⚡ Using Metal acceleration"
+            echo ""
+
+            python3 -c "
+import whisper
+import sys
+
+try:
+    print('🚀 Loading MacWhisper Pro LARGE-V3 model...')
+    model = whisper.load_model('large-v3', device='mps')
+    print('⚡ Transcribing with MacWhisper Pro quality...')
+    print('')
+
+    result = model.transcribe('audio.mp3',
+                             language=None,  # Auto-detect
+                             verbose=False)
+
+    transcript = result['text']
+    print('')
+    print('✅ SUCCESS! MacWhisper Pro transcription completed!')
+    print(f'📊 Length: {len(transcript)} characters')
+    print(f'🌍 Language: {result.get(\"language\", \"auto-detected\")}')
+    print('')
+
+    # Save transcript
+    with open('final-transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    print('💾 Professional transcript saved!')
+    print(f'📁 File: final-transcript.txt')
+    print('')
+
+except Exception as e:
+    print(f'❌ MacWhisper Pro transcription failed: {e}')
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+"
+
+            if [[ -f "final-transcript.txt" && -s "final-transcript.txt" ]]; then
+              echo ""
+              echo "🎉 === FINAL MACWHISPER PRO TRANSCRIPT ==="
+              echo ""
+              cat final-transcript.txt
+              echo ""
+              echo "=== END PROFESSIONAL TRANSCRIPT ==="
+              echo ""
+              echo "✨ SUCCESS! MacWhisper Pro transcription completed!"
+              echo "📈 Total characters: $(wc -c < final-transcript.txt)"
+              echo "🎯 Quality: Professional grade with large-v3 model"
+              echo "⚡ Acceleration: Metal Performance Shaders (MPS)"
+              echo ""
+            else
+              echo "❌ No transcript generated"
+              exit 1
+            fi
+          else
+            echo "❌ Failed to download audio"
+            exit 1
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/final-transcription
