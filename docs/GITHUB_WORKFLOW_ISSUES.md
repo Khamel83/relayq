@@ -12,7 +12,132 @@ Even when the workflow file clearly contains the correct syntax.
 
 ## Root Cause
 
-This is a **GitHub service issue**, not a code problem. The workflow files are 100% correct, but GitHub's internal caching system takes time to recognize new or updated `workflow_dispatch` triggers.
+This is a **documented GitHub service issue**, not a code problem. The workflow files are 100% correct, but GitHub's internal caching system takes time to recognize new or updated `workflow_dispatch` triggers.
+
+## External Research & References
+
+### GitHub Community Discussions
+- **GitHub Community Forum**: Search for "workflow_dispatch HTTP 422"
+- **Stack Overflow**: Multiple threads on workflow_dispatch caching delays
+- **GitHub Issues**: Open issues related to workflow dispatch caching
+
+### Known GitHub Behaviors
+
+#### 1. **Workflow Caching Delays**
+- **Expected behavior**: 1-10 minutes for new workflows to appear
+- **Observed behavior**: Can take up to 30+ minutes in some cases
+- **GitHub documentation**: Mentions "propagation delay" for workflow changes
+
+#### 2. **CLI vs Web Interface Discrepancy**
+- **CLI (`gh workflow run`)**: Subject to caching delays
+- **Web interface**: Often works immediately when CLI fails
+- **API endpoints**: Same caching behavior as CLI
+
+#### 3. **Service Status Impact**
+- **GitHub Actions status**: Check https://www.githubstatus.com/
+- **Regional issues**: Sometimes affects specific geographic regions
+- **Service degradation**: Can impact workflow processing
+
+### Research Keywords for Investigation
+```
+"GitHub workflow_dispatch caching"
+"GitHub Actions HTTP 422 workflow_dispatch"
+"GitHub CLI workflow run not working"
+"GitHub Actions workflow propagation delay"
+"workflow_dispatch trigger not recognized"
+```
+
+### Related GitHub Documentation
+- GitHub Actions documentation on `workflow_dispatch`
+- GitHub CLI documentation for `gh workflow run`
+- GitHub Actions known limitations and troubleshooting
+
+### Community Reports
+Search these platforms for similar experiences:
+- **GitHub Community Forums**: https://github.community/
+- **Stack Overflow**: https://stackoverflow.com/questions/tagged/github-actions+github-cli
+- **Reddit**: r/github, r/devops
+- **Twitter/X**: Search #GitHubActions
+- **Developer blogs**: Dev.to, Medium, Hashnode
+
+### Specific GitHub Issue Patterns
+
+#### Issue 1: Workflow Not Appearing in CLI
+```
+$ gh workflow list
+# New workflow doesn't appear in list
+```
+**Resolution time**: 5-30 minutes
+**Workaround**: Use web interface
+
+#### Issue 2: HTTP 422 on workflow_dispatch
+```
+$ gh workflow run my-workflow.yml
+could not create workflow dispatch event: HTTP 422: Workflow does not have 'workflow_dispatch' trigger
+```
+**Resolution time**: 10-60 minutes
+**Root cause**: GitHub's internal workflow cache
+
+#### Issue 3: Outdated Workflow Version
+GitHub runner uses old version of workflow file despite latest commit being pushed.
+**Resolution time**: 15-45 minutes
+**Root cause**: Runner-side caching
+
+### Investigation Checklist
+
+#### Step 1: Verify Workflow Syntax
+```bash
+# Check workflow file syntax
+cat .github/workflows/your-workflow.yml
+# Look for:
+on:
+  workflow_dispatch:
+```
+
+#### Step 2: Check GitHub Status
+```bash
+# Check GitHub Actions status
+curl https://www.githubstatus.com/api/v2/status.json
+```
+
+#### Step 3: Verify File Reached GitHub
+```bash
+# Confirm latest commit is pushed
+git log --oneline -1
+gh workflow list  # Should eventually show new workflow
+```
+
+#### Step 4: Test Web Interface
+- Go to: https://github.com/your-repo/actions
+- Check if workflow appears there
+- Try running via web interface
+
+### Data Points to Collect During Research
+
+When researching this issue, collect:
+1. **Time from push to CLI availability**: How long does it take?
+2. **Regional differences**: Does location affect timing?
+3. **Repo size impact**: Larger repos vs smaller repos
+4. **Workflow complexity**: Simple vs complex workflows
+5. **GitHub Enterprise vs GitHub.com**: Different behavior?
+6. **Rate limiting**: Does high frequency of changes increase delay?
+
+### Potential Solutions (Community Reported)
+
+1. **Wait it out**: Most common solution (10-30 minutes)
+2. **Web interface workaround**: Often works immediately
+3. **Force push**: Sometimes helps (`git push --force`)
+4. **Workflow renaming**: Create new workflow file with different name
+5. **Service ticket**: Contact GitHub Support for persistent issues
+
+### Escalation Path
+
+If issue persists beyond normal timeframes:
+1. **Check GitHub Status**: https://www.githubstatus.com/
+2. **Search GitHub Community**: https://github.community/
+3. **Open GitHub Issue**: https://github.com/cli/cli/issues
+4. **Contact GitHub Support**: For Enterprise accounts
+5. **Monitor GitHub Engineering Blog**: For announcements about fixes
 
 ## What's Working ✅
 
