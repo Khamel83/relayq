@@ -1,4 +1,4 @@
-name: Atlas Video Processor
+name: Video/Audio Processor
 
 on:
   workflow_dispatch:
@@ -67,7 +67,7 @@ jobs:
       - name: Setup Processing Environment
         id: setup
         run: |
-          echo "=== ATLAS VIDEO PROCESSOR ==="
+          echo "=== VIDEO/AUDIO PROCESSOR ==="
           echo "🎬 Task: ${{ inputs.task }}"
           echo "🌐 Source: ${{ inputs.source }}"
           echo "🔗 URL: ${{ inputs.url }}"
@@ -76,9 +76,9 @@ jobs:
           echo ""
 
           # Create processing directory
-          JOB_ID="atlas-$(date +%Y%m%d-%H%M%S)"
+          JOB_ID="processor-$(date +%Y%m%d-%H%M%S)"
           echo "job-id=$JOB_ID" >> $GITHUB_OUTPUT
-          WORKSPACE="/tmp/atlas-processing/$JOB_ID"
+          WORKSPACE="/tmp/media-processing/$JOB_ID"
           mkdir -p "$WORKSPACE"/{raw,processed,metadata,transcripts,thumbnails}
           echo "✅ Workspace created: $WORKSPACE"
 

@@ -1,4 +1,4 @@
-name: Atlas Content Discovery
+name: Content Discovery
 
 on:
   workflow_dispatch:
@@ -45,7 +45,7 @@ jobs:
     steps:
       - name: Setup Discovery Environment
         run: |
-          echo "=== ATLAS CONTENT DISCOVERY ==="
+          echo "=== CONTENT DISCOVERY ==="
           echo "🔍 Task: ${{ inputs.task }}"
           echo "🌐 Source: ${{ inputs.source_url }}"
           echo "🔑 Keywords: ${{ inputs.keywords }}"
@@ -55,7 +55,7 @@ jobs:
 
           # Create discovery workspace
           DISCOVERY_ID="discovery-$(date +%Y%m%d-%H%M%S)"
-          WORKSPACE="/tmp/atlas-discovery/$DISCOVERY_ID"
+          WORKSPACE="/tmp/content-discovery/$DISCOVERY_ID"
           mkdir -p "$WORKSPACE"/{discovered,processed,metadata}
           echo "✅ Discovery workspace: $WORKSPACE"
 

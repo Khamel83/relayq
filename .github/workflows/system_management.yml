@@ -1,4 +1,4 @@
-name: Atlas System Management
+name: System Management
 
 on:
   workflow_dispatch:
@@ -338,7 +338,7 @@ print(f'Sum result: {total}')
           echo "=== SYSTEM REPORT ==="
           echo ""
 
-          REPORT_DIR="/tmp/atlas-system-report"
+          REPORT_DIR="/tmp/system-report"
           mkdir -p "$REPORT_DIR"
           REPORT_FILE="$REPORT_DIR/system_report_$(date +%Y%m%d_%H%M%S).json"
 

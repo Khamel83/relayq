@@ -1,9 +1,9 @@
-# Mac Mini Video/Audio Processing Specifications
+# Mac Mini Video/Audio Processing Tools
 
-**Project**: Atlas + RelayQ Integration via GitHub Actions
+**Project**: General-Purpose Media Processing Toolkit
 **Hardware**: M4 Mac mini (16GB RAM, 2TB storage, Metal acceleration)
 **Platform**: GitHub Actions self-hosted runner
-**Scope**: Complete video/audio processing pipeline
+**Scope**: Reusable video/audio processing components for any project
 
 ## 🎯 Core Capabilities Overview
 
