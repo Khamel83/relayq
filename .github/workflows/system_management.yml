@@ -1,6 +1,15 @@
 name: System Management
 
 on:
+  # Temporary push trigger to ensure workflow registration (research-based workaround)
+  push:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/system_management.yml'
+  pull_request:
+    branches: [ master ]
+    paths:
+      - '.github/workflows/system_management.yml'
   workflow_dispatch:
     inputs:
       task:
@@ -39,8 +48,19 @@ jobs:
     timeout-minutes: 60
 
     steps:
+      - name: Handle Push Trigger (Workflow Validation Only)
+        if: github.event_name == 'push' || github.event_name == 'pull_request'
+        run: |
+          echo "🔧 Push trigger detected - validating System Management workflow"
+          echo "✅ Workflow file: ${{ github.workflow }}"
+          echo "✅ Trigger: ${{ github.event_name }}"
+          echo "✅ Ref: ${{ github.ref }}"
+          echo ""
+          echo "🚀 This push trigger ensures GitHub registers the workflow_dispatch trigger"
+          echo "📋 System Management workflow validation complete"
+
       - name: System Health Check
-        if: inputs.task == 'health-check'
+        if: (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule') && inputs.task == 'health-check'
         run: |
           echo "=== SYSTEM HEALTH CHECK ==="
           echo ""
