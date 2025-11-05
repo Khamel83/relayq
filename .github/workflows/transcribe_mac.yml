@@ -149,13 +149,28 @@ jobs:
           echo "Model: ${{ env.WHISPER_MODEL }}"
           echo "Optimization level: ${{ env.OPTIMIZATION_LEVEL }}"
 
+          # Load Mac mini environment
+          if [[ -f "$HOME/.config/relayq/env" ]]; then
+            echo "Loading Mac mini environment configuration"
+            source "$HOME/.config/relayq/env"
+
+            # Override with workflow inputs if provided
+            ASR_BACKEND="${{ env.ASR_BACKEND }}"
+            WHISPER_MODEL="${{ env.WHISPER_MODEL }}"
+
+            echo "Environment loaded - ASR backend: $ASR_BACKEND, Model: $WHISPER_MODEL"
+            echo "OpenRouter configured: ${OPENAI_API_BASE_URL:-not set}"
+          else
+            echo "Warning: No environment file found at $HOME/.config/relayq/env"
+          fi
+
           # Show system resource usage before transcription
           echo "System resources before transcription:"
           top -l 1 | head -10
 
           # Run transcription script
           START_TIME=$(date +%s)
-          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ env.AUDIO_FILE }}" "${{ env.ASR_BACKEND }}")
+          OUTPUT_FILE=$(./jobs/transcribe.sh "${{ env.AUDIO_FILE }}" "$ASR_BACKEND")
           END_TIME=$(date +%s)
 
           if [[ $? -ne 0 ]]; then
