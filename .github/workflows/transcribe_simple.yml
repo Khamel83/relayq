@@ -52,8 +52,8 @@ import whisper
 import sys
 
 try:
-    print('Loading Whisper LARGE model for best quality...')
-    model = whisper.load_model('large')
+    print('Loading Whisper LARGE-V3 model for MacWhisper Pro quality...')
+    model = whisper.load_model('large-v3', device='mps')
     print('Transcribing audio file...')
     result = model.transcribe('podcast.mp3')
 
