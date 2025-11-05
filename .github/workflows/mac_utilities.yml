@@ -1,0 +1,208 @@
+name: Mac Mini Utilities
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run'
+        required: true
+        type: choice
+        options:
+        - youtube-transcription
+        - youtube-metadata
+        - youtube-download
+        - file-conversion
+        - system-info
+      url:
+        description: 'URL (for YouTube tasks)'
+        required: false
+        type: string
+      input_file:
+        description: 'Input file path (for file tasks)'
+        required: false
+        type: string
+      output_format:
+        description: 'Output format'
+        required: false
+        type: string
+        default: 'mp4'
+
+jobs:
+  mac-utilities:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 30
+
+    steps:
+      - name: Execute Mac Mini Utility
+        run: |
+          echo "=== MAC MINI UTILITIES ==="
+          echo "🖥️  Task: ${{ inputs.task }}"
+          echo "📁 URL: ${{ inputs.url }}"
+          echo "📄 Input: ${{ inputs.input_file }}"
+          echo "🎬 Output Format: ${{ inputs.output_format }}"
+          echo ""
+
+          # Create workspace
+          mkdir -p /tmp/mac-utilities
+          cd /tmp/mac-utilities
+
+          case "${{ inputs.task }}" in
+            "youtube-transcription")
+              if [[ -z "${{ inputs.url }}" ]]; then
+                echo "❌ URL required for YouTube transcription"
+                exit 1
+              fi
+
+              echo "🎥 Starting YouTube transcription pipeline..."
+              echo "📥 Downloading: ${{ inputs.url }}"
+
+              # Download best audio
+              yt-dlp -f "bestaudio" -o "audio.%(ext)s" --no-playlist "${{ inputs.url }}"
+
+              if [[ -f "audio.mp3" || -f "audio.m4a" || -f "audio.webm" ]]; then
+                echo "✅ Audio downloaded successfully"
+
+                # Find the audio file
+                AUDIO_FILE=$(ls audio.* | head -1)
+                echo "🎵 Processing: $AUDIO_FILE"
+
+                # Transcribe with MacWhisper Pro
+                python3 -c "
+import whisper
+import os
+
+try:
+    print('🚀 Loading MacWhisper Pro large-v3 model...')
+    model = whisper.load_model('large-v3', device='mps')
+    print('⚡ Transcribing YouTube audio...')
+
+    result = model.transcribe('$AUDIO_FILE', verbose=False)
+    transcript = result['text']
+
+    # Save multiple formats
+    with open('transcript.txt', 'w') as f:
+        f.write(transcript)
+
+    with open('transcript.json', 'w') as f:
+        import json
+        json.dump(result, f, indent=2)
+
+    print(f'✅ Transcription completed: {len(transcript)} characters')
+    print('💾 Saved as transcript.txt and transcript.json')
+
+except Exception as e:
+    print(f'❌ Transcription failed: {e}')
+    exit(1)
+"
+
+                echo ""
+                echo "📄 === TRANSCRIPT ==="
+                head -20 transcript.txt
+                echo "📄 === END PREVIEW ==="
+                echo ""
+                echo "📊 Full transcript saved to transcript.txt"
+              else
+                echo "❌ Failed to download audio"
+                exit 1
+              fi
+              ;;
+
+            "youtube-metadata")
+              if [[ -z "${{ inputs.url }}" ]]; then
+                echo "❌ URL required for YouTube metadata"
+                exit 1
+              fi
+
+              echo "📊 Extracting YouTube metadata..."
+              yt-dlp --print-json --write-description "${{ inputs.url }}" > metadata.json
+
+              echo "✅ Metadata extracted:"
+              jq '.title, .uploader, .duration, .view_count, .upload_date' metadata.json 2>/dev/null || cat metadata.json
+              ;;
+
+            "youtube-download")
+              if [[ -z "${{ inputs.url }}" ]]; then
+                echo "❌ URL required for YouTube download"
+                exit 1
+              fi
+
+              echo "⬇️  Downloading YouTube content as ${{ inputs.output_format }}..."
+              yt-dlp -f "best[ext=${{ inputs.output_format }}]/best" -o "video.%(ext)s" "${{ inputs.url }}"
+
+              if [[ $? -eq 0 ]]; then
+                echo "✅ Download completed:"
+                ls -lh video.*
+              else
+                echo "❌ Download failed"
+                exit 1
+              fi
+              ;;
+
+            "file-conversion")
+              if [[ -z "${{ inputs.input_file }}" ]]; then
+                echo "❌ Input file required for conversion"
+                exit 1
+              fi
+
+              if [[ ! -f "${{ inputs.input_file }}" ]]; then
+                echo "❌ Input file not found: ${{ inputs.input_file }}"
+                exit 1
+              fi
+
+              echo "🔄 Converting ${{ inputs.input_file }} to ${{ inputs.output_format }}..."
+
+              INPUT_BASE=$(basename "${{ inputs.input_file }}" | cut -d. -f1)
+              OUTPUT_FILE="${INPUT_BASE}.${{ inputs.output_format }}"
+
+              ffmpeg -i "${{ inputs.input_file }}" "$OUTPUT_FILE"
+
+              if [[ $? -eq 0 ]]; then
+                echo "✅ Conversion completed: $OUTPUT_FILE"
+                ls -lh "$OUTPUT_FILE"
+              else
+                echo "❌ Conversion failed"
+                exit 1
+              fi
+              ;;
+
+            "system-info")
+              echo "💻 Mac Mini System Information:"
+              echo ""
+              echo "🖥️  Hardware:"
+              system_profiler SPHardwareDataType | grep -E "(Model|Processor|Memory)"
+              echo ""
+              echo "💾 Storage:"
+              df -h | grep -E "(Filesystem|/dev/)"
+              echo ""
+              echo "🌐 Network:"
+              ifconfig | grep -A1 "en0"
+              echo ""
+              echo "📦 Software:"
+              echo "macOS: $(sw_vers -productVersion)"
+              echo "Python: $(python3 --version)"
+              echo "FFmpeg: $(ffmpeg -version | head -1)"
+              echo "yt-dlp: $(yt-dlp --version)"
+              echo ""
+              echo "🚀 Available Tools:"
+              which python3 ffmpeg yt-dlp whisper xargs curl jq
+              ;;
+
+            *)
+              echo "❌ Unknown task: ${{ inputs.task }}"
+              echo "Available tasks: youtube-transcription, youtube-metadata, youtube-download, file-conversion, system-info"
+              exit 1
+              ;;
+          esac
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-utilities-output
+          path: /tmp/mac-utilities/
+          retention-days: 7
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/mac-utilities
