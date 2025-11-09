@@ -1,0 +1,65 @@
+name: Atlas Simple Processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_limit:
+        description: 'Number of episodes to process'
+        required: false
+        type: string
+        default: '3'
+      podcast_filter:
+        description: 'Filter by podcast name (optional)'
+        required: false
+        type: string
+
+jobs:
+  atlas-process:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout RelayQ
+      uses: actions/checkout@v4
+
+    - name: Process Atlas Episodes
+      run: |
+        echo "=== ATLAS PODCAST PROCESSING ==="
+        echo "Episode Limit: ${{ github.event.inputs.episode_limit }}"
+        echo "Podcast Filter: ${{ github.event.inputs.podcast_filter }}"
+
+        # Get episodes from Atlas
+        python3 atlas_data_provider.py get_episodes ${{ github.event.inputs.episode_limit }} "${{ github.event.inputs.podcast_filter }}" > episodes.json
+
+        echo "Found episodes:"
+        cat episodes.json
+
+        # Process each episode
+        python3 -c "
+import json
+import subprocess
+
+# Load episodes
+with open('episodes.json', 'r') as f:
+    data = json.load(f)
+    episodes = data['episodes']
+
+print(f'Processing {len(episodes)} episodes...')
+
+for i, episode in enumerate(episodes, 1):
+    print(f'[{i}/{len(episodes)}] {episode[\"podcast_name\"]}: {episode[\"title\"][:50]}...')
+
+    # Mark as processing in Atlas
+    subprocess.run(['python3', 'atlas_data_provider.py', 'start_processing', str(episode['id'])])
+
+    # Simulate transcript discovery (for testing)
+    mock_transcript = f\"Mock transcript for: {episode['title']}\\n\\nThis is a test transcript to verify the Atlas-RelayQ integration works end-to-end.\\n\\nEpisode ID: {episode['id']}\\nPodcast: {episode['podcast_name']}\\nPublished: {episode['published_date']}\\n\\n[Speaker 1]: Content discussion...\\n[Speaker 2]: Response and analysis...\\n\\nActual transcript would be extracted from real sources in production.\\n\"
+
+    # Store in Atlas database
+    subprocess.run(['python3', 'atlas_data_provider.py', 'complete_episode',
+                   str(episode['id']), mock_transcript, 'RelayQ Test Discovery'])
+
+    print(f'  ✓ Transcript stored in Atlas database')
+
+# Show final stats
+python3 atlas_data_provider.py stats
