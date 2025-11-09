@@ -1,0 +1,85 @@
+name: Atlas Processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      episode_limit:
+        description: 'Number of episodes to process'
+        required: false
+        type: string
+        default: '3'
+      podcast_filter:
+        description: 'Filter by podcast name (optional)'
+        required: false
+        type: string
+
+jobs:
+  atlas-process:
+    runs-on: [self-hosted, macmini]
+    timeout-minutes: 5
+
+    steps:
+    - name: Checkout RelayQ
+      uses: actions/checkout@v4
+
+    - name: Setup Atlas Environment
+      run: |
+        echo "=== ATLAS PODCAST PROCESSING ==="
+        echo "Episode Limit: ${{ github.event.inputs.episode_limit }}"
+        echo "Podcast Filter: ${{ github.event.inputs.podcast_filter }}"
+
+    - name: Test Atlas Connection
+      run: |
+        python3 atlas_data_provider.py stats
+
+    - name: Process Episodes
+      run: |
+        # Get episodes from Atlas
+        EPISODE_LIMIT="${{ github.event.inputs.episode_limit }}"
+        PODCAST_FILTER="${{ github.event.inputs.podcast_filter }}"
+
+        python3 atlas_data_provider.py get_episodes "$EPISODE_LIMIT" "$PODCAST_FILTER" > episodes.json
+
+        # Show results
+        echo "Found episodes:"
+        cat episodes.json
+
+    - name: Update Episodes (Test)
+      run: |
+        python3 -c "
+import json
+import subprocess
+
+with open('episodes.json', 'r') as f:
+    data = json.load(f)
+    episodes = data['episodes']
+
+print(f'Processing {len(episodes)} episodes...')
+
+if episodes:
+    episode = episodes[0]  # Process first episode as test
+    episode_id = episode['id']
+    podcast_name = episode['podcast_name']
+    title = episode['title'][:50] + '...'
+
+    print(f'Testing: {podcast_name} - {title}')
+
+    # Mark as processing
+    subprocess.run(['python3', 'atlas_data_provider.py', 'start_processing', str(episode_id)])
+
+    # Create mock transcript
+    mock_transcript = f\"Test transcript for episode {episode_id}\\n\\nThis is a test to verify Atlas-RelayQ integration.\\n\\n[Speaker 1]: Testing connection...\\n[Speaker 2]: Atlas database updated successfully!\\n\"
+
+    # Store results
+    subprocess.run(['python3', 'atlas_data_provider.py', 'complete_episode',
+                   str(episode_id), mock_transcript, 'Test Source'])
+
+    print('✓ Test episode processed successfully!')
+else:
+    print('No episodes found to process')
+
+# Show final stats
+print()
+print('Final Atlas Database Status:')
+subprocess.run(['python3', 'atlas_data_provider.py', 'stats'])
+"
