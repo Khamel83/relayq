@@ -108,18 +108,38 @@ gh auth login
 
 ## Configuration
 
-### Runner Environment
+### Unified Configuration File
+
+**All RelayQ configuration is in ONE file:** `~/.config/relayq/env`
+
 ```bash
 # Create ~/.config/relayq/env
 mkdir -p ~/.config/relayq
-cat > ~/.config/relayq/env << 'EOF'
+cp jobs/env.example ~/.config/relayq/env
+
+# Edit with your settings
+nano ~/.config/relayq/env
+```
+
+This file contains:
+- ASR backend settings (local, OpenAI, router)
+- API keys
+- Tailscale Funnel configuration (if using public web access)
+- All environment variables
+
+**Example configuration:**
+```bash
+# ASR Backend
 ASR_BACKEND=local
 WHISPER_MODEL=base
-
-# Just paste your API key here - works with OpenAI, OpenRouter, etc.
 AI_API_KEY=sk-your-api-key-here
-EOF
+
+# Tailscale Funnel (for public dashboards/APIs)
+TAILSCALE_FUNNEL_BASE_URL=https://oci-vm.ts.net:8000
+RELAYQ_DASHBOARD_PORT=8000
 ```
+
+See `jobs/env.example` for all available options.
 
 ### Job Routing Policy
 ```yaml
@@ -133,8 +153,32 @@ routes:
       max_size_mb: 1000
 ```
 
+## Public Web Access (Optional)
+
+Want to make RelayQ publicly accessible? Use the **Tailscale Funnel module** for:
+- 🌐 Public dashboard showing job status and runner health
+- 🔌 Public API for external job submission
+- 📤 Share transcription results via HTTPS links
+- 💰 **$0 hosting costs** - runs on your infrastructure with automatic HTTPS
+
+**Quick start:**
+```bash
+cd tailscale-funnel-module
+./scripts/funnel-setup.sh    # One-time setup
+python examples/relayq/dashboard.py &  # Start dashboard
+./scripts/funnel-start.sh    # Make public
+```
+
+Your dashboard is now at: `https://your-machine.ts.net:8000`
+
+**Documentation:**
+- **[tailscale-funnel-module/QUICKSTART.md](tailscale-funnel-module/QUICKSTART.md)** ⭐ Start here!
+- **[tailscale-funnel-module/README.md](tailscale-funnel-module/README.md)** - Full overview
+- **[tailscale-funnel-module/TAILSCALE_COMPLETE_STACK.md](tailscale-funnel-module/TAILSCALE_COMPLETE_STACK.md)** - Complete infrastructure replacement
+
 ## Documentation
 
+### Core RelayQ
 - **[docs/OVERVIEW.md](docs/OVERVIEW.md)** - Architecture and motivation
 - **[docs/SETUP_RUNNERS_mac.md](docs/SETUP_RUNNERS_mac.md)** - macOS runner setup
 - **[docs/SETUP_RUNNERS_rpi.md](docs/SETUP_RUNNERS_rpi.md)** - Raspberry Pi setup
@@ -146,6 +190,12 @@ routes:
 - **[docs/OPSEC.md](docs/OPSEC.md)** - Security practices
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** - Migration decisions
 - **[docs/TASKS.md](docs/TASKS.md)** - Implementation checklist
+
+### Tailscale Funnel (Public Web Access)
+- **[tailscale-funnel-module/QUICKSTART.md](tailscale-funnel-module/QUICKSTART.md)** - Quick start guide
+- **[tailscale-funnel-module/docs/MCP_INTEGRATION.md](tailscale-funnel-module/docs/MCP_INTEGRATION.md)** - AI-driven management
+- **[tailscale-funnel-module/docs/SECURITY.md](tailscale-funnel-module/docs/SECURITY.md)** - Security best practices
+- **[tailscale-funnel-module/docs/ARCHITECTURE.md](tailscale-funnel-module/docs/ARCHITECTURE.md)** - How it works
 
 ## Examples
 
