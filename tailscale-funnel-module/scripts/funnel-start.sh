@@ -7,7 +7,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$PROJECT_ROOT/tailscale-config.json"
-ENV_FILE="$PROJECT_ROOT/.env.tailscale"
+
+# Use unified RelayQ env file
+ENV_FILE="$HOME/.config/relayq/env"
 
 echo "=== Starting Tailscale Funnel ==="
 echo ""
@@ -55,27 +57,34 @@ else
     exit 1
 fi
 
-# Update .env.tailscale with public URL
+# Update unified env file with public URL
 PUBLIC_URL="https://$MACHINE_NAME$TAILNET"
 if [ -f "$ENV_FILE" ]; then
-    # Update BASE_URL if it exists, otherwise append
-    if grep -q "^BASE_URL=" "$ENV_FILE"; then
-        sed -i.bak "s|^BASE_URL=.*|BASE_URL=$PUBLIC_URL|" "$ENV_FILE"
+    # Update TAILSCALE_FUNNEL_BASE_URL if it exists, otherwise append
+    if grep -q "^TAILSCALE_FUNNEL_BASE_URL=" "$ENV_FILE"; then
+        # Use portable sed syntax (works on macOS and Linux)
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            sed -i '' "s|^TAILSCALE_FUNNEL_BASE_URL=.*|TAILSCALE_FUNNEL_BASE_URL=$PUBLIC_URL:$PORT|" "$ENV_FILE"
+        else
+            sed -i "s|^TAILSCALE_FUNNEL_BASE_URL=.*|TAILSCALE_FUNNEL_BASE_URL=$PUBLIC_URL:$PORT|" "$ENV_FILE"
+        fi
     else
-        echo "BASE_URL=$PUBLIC_URL" >> "$ENV_FILE"
+        echo "TAILSCALE_FUNNEL_BASE_URL=$PUBLIC_URL:$PORT" >> "$ENV_FILE"
     fi
-    echo "✓ Updated $ENV_FILE with BASE_URL=$PUBLIC_URL"
+    echo "✓ Updated $ENV_FILE with TAILSCALE_FUNNEL_BASE_URL=$PUBLIC_URL:$PORT"
 fi
 
 echo ""
 echo "=== Funnel Started Successfully! ==="
 echo ""
 echo "Your app is now publicly accessible at:"
-echo "  $PUBLIC_URL"
+echo "  $PUBLIC_URL:$PORT"
 echo ""
 echo "Make sure your app is:"
 echo "  ✓ Running on port $PORT"
 echo "  ✓ Listening on 0.0.0.0 (not just localhost)"
+echo ""
+echo "Configuration is in: $ENV_FILE"
 echo ""
 echo "Check status: ./scripts/funnel-status.sh"
 echo "Stop Funnel: ./scripts/funnel-stop.sh"

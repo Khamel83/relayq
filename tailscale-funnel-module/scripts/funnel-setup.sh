@@ -8,6 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_FILE="$PROJECT_ROOT/tailscale-config.json"
 
+# Use unified RelayQ env file
+ENV_FILE="$HOME/.config/relayq/env"
+
 echo "=== Tailscale Funnel Setup ==="
 echo ""
 
@@ -65,38 +68,70 @@ else
     echo "✓ Config file exists: $CONFIG_FILE"
 fi
 
-# Check if .env.tailscale exists
-ENV_FILE="$PROJECT_ROOT/.env.tailscale"
+# Ensure RelayQ config directory exists
+mkdir -p "$HOME/.config/relayq"
+
+# Add Tailscale configuration to unified env file if not present
 if [ ! -f "$ENV_FILE" ]; then
     echo ""
-    echo "Creating .env.tailscale template..."
-    cat > "$ENV_FILE" << EOF
-# Tailscale Environment Variables
-# This file is auto-generated and updated by funnel scripts
+    echo "Creating $ENV_FILE with Tailscale configuration..."
+    cp "$PROJECT_ROOT/../jobs/env.example" "$ENV_FILE" 2>/dev/null || cat > "$ENV_FILE" << 'ENVEOF'
+# RelayQ Unified Configuration
+# This file contains all configuration for RelayQ and Tailscale Funnel
 
-# Base URL for this app (auto-updated when Funnel starts)
-BASE_URL=https://$MACHINE_NAME$TAILNET:8000
+ASR_BACKEND=local
+WHISPER_MODEL=base
+AI_API_KEY=sk-your-api-key-here
+ENVEOF
+fi
 
-# Project configuration
-PROJECT_NAME=relayq
-MACHINE_NAME=$MACHINE_NAME
-TAILNET=$TAILNET
+# Add or update Tailscale-specific variables
+if ! grep -q "TAILSCALE_FUNNEL_BASE_URL" "$ENV_FILE" 2>/dev/null; then
+    echo ""
+    echo "Adding Tailscale configuration to $ENV_FILE..."
+    cat >> "$ENV_FILE" << EOF
 
-# Add your app-specific environment variables below
-# Example:
-# DATABASE_URL=postgresql://user:pass@localhost/dbname
-# API_KEY=your-api-key-here
+# =============================================================================
+# TAILSCALE FUNNEL CONFIGURATION
+# =============================================================================
+# Automatically managed by tailscale-funnel-module scripts
+
+# Public base URL when Funnel is enabled (auto-updated by funnel-start.sh)
+TAILSCALE_FUNNEL_BASE_URL=https://$MACHINE_NAME$TAILNET:8000
+
+# Machine information
+TAILSCALE_MACHINE_NAME=$MACHINE_NAME
+TAILSCALE_TAILNET=$TAILNET
+
+# Tailscale MCP API Key (for AI-driven management)
+# Get from: https://login.tailscale.com/admin/settings/keys
+# TAILSCALE_API_KEY=tskey-api-your-key-here
+
+# Public dashboard/API settings
+RELAYQ_DASHBOARD_PORT=8000
+RELAYQ_API_PORT=8001
+RELAYQ_ARTIFACTS_PORT=8002
+
+# API authentication (generate with: python -c "import secrets; print(secrets.token_urlsafe(32))")
+# RELAYQ_API_KEY=change-me-in-production
 EOF
-    echo "✓ Created .env.tailscale: $ENV_FILE"
+    echo "✓ Added Tailscale configuration to $ENV_FILE"
 else
-    echo "✓ .env.tailscale exists: $ENV_FILE"
+    echo "✓ Tailscale configuration already in $ENV_FILE"
 fi
 
 echo ""
 echo "=== Setup Complete! ==="
 echo ""
+echo "Configuration:"
+echo "  Unified env file: $ENV_FILE"
+echo "  Tailscale config: $CONFIG_FILE"
+echo ""
+echo "All RelayQ and Tailscale settings are in ONE file: $ENV_FILE"
+echo ""
 echo "Next steps:"
-echo "  1. Edit $CONFIG_FILE to set your port"
-echo "  2. Run: ./scripts/funnel-start.sh to start Funnel"
-echo "  3. Run: ./scripts/funnel-status.sh to get your public URL"
+echo "  1. Edit $ENV_FILE to configure API keys and settings"
+echo "  2. Edit $CONFIG_FILE to set your port (if needed)"
+echo "  3. Run: ./scripts/funnel-start.sh to start Funnel"
+echo "  4. Run: ./scripts/funnel-status.sh to get your public URL"
 echo ""

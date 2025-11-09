@@ -18,11 +18,13 @@ from datetime import datetime
 from flask import Flask, jsonify, render_template_string
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv('.env.tailscale')
+# Load environment variables from unified RelayQ config
+ENV_FILE = os.path.expanduser('~/.config/relayq/env')
+load_dotenv(ENV_FILE)
 
 app = Flask(__name__)
-BASE_URL = os.getenv('BASE_URL', 'http://localhost:8000')
+BASE_URL = os.getenv('TAILSCALE_FUNNEL_BASE_URL', 'http://localhost:8000')
+PORT = int(os.getenv('RELAYQ_DASHBOARD_PORT', 8000))
 
 # HTML Template
 HTML_TEMPLATE = """
@@ -306,11 +308,11 @@ def submit_job():
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv('PORT', 8000))
-    print(f"Starting RelayQ Dashboard on port {port}")
+    print(f"Starting RelayQ Dashboard on port {PORT}")
     print(f"Base URL: {BASE_URL}")
-    print(f"Health check: http://0.0.0.0:{port}/health")
+    print(f"Config file: {ENV_FILE}")
+    print(f"Health check: http://0.0.0.0:{PORT}/health")
     print(f"\nIMPORTANT: Make sure 'gh' CLI is authenticated!")
     print(f"Run: gh auth login\n")
 
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=PORT, debug=True)
