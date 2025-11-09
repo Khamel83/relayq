@@ -1,0 +1,17 @@
+{
+  "project_name": "relayq",
+  "description": "GitHub-first job orchestration platform",
+  "port": 8000,
+  "host": "0.0.0.0",
+  "protocol": "https",
+  "health_check_path": "/health",
+  "health_check_timeout": 30,
+  "restart_on_failure": true,
+  "max_restarts": 3,
+  "process_manager": "manual",
+  "comments": {
+    "port": "Port your application listens on",
+    "host": "Use 0.0.0.0 to accept connections from Tailscale Funnel (not 127.0.0.1)",
+    "process_manager": "Options: manual, systemd, pm2, supervisor"
+  }
+}
