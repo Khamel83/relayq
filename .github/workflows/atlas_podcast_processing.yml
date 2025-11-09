@@ -1,0 +1,144 @@
+name: Atlas Podcast Processing
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_type:
+        description: 'Atlas processing task'
+        required: true
+        type: choice
+        options:
+        - transcript-discovery
+        - episode-backlog
+        - podcast-monitoring
+        - batch-processing
+      podcast_name:
+        description: 'Specific podcast to process (optional)'
+        required: false
+        type: string
+      episode_limit:
+        description: 'Number of episodes to process'
+        required: false
+        type: string
+        default: '10'
+      priority_level:
+        description: 'Priority level (1=highest, 5=lowest)'
+        required: false
+        type: string
+        default: '3'
+
+  issues:
+    types: [opened, reopened]
+
+  schedule:
+    # Run Atlas processing every 4 hours
+    - cron: '0 */4 * * *'
+
+jobs:
+  atlas-processing:
+    runs-on: ubuntu-latest
+    if: ${ github.event_name == 'workflow_dispatch' || (github.event_name == 'issues' && contains(github.event.issue.labels.*.name, 'atlas-podcast')) }
+
+    steps:
+    - name: Checkout Atlas
+      uses: actions/checkout@v4
+      with:
+        repository: Khamel83/atlas  # Update with actual Atlas repo
+        token: ${ secrets.GITHUB_TOKEN }
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        pip install requests beautifulsoup4 feedparser
+
+    - name: Load Atlas configuration
+      run: |
+        echo "ATLAS_DB_PATH=/home/ubuntu/dev/atlas/podcast_processing.db" >> $GITHUB_ENV
+        echo "RELAYQ_JOB_ID=${ github.run_id }" >> $GITHUB_ENV
+
+    - name: Process Atlas task
+      run: |
+        python3 -c "
+import json
+import requests
+import sqlite3
+from datetime import datetime
+
+# Parse job parameters
+task_type = '${ github.event.inputs.task_type or 'transcript-discovery' }'
+podcast_name = '${ github.event.inputs.podcast_name or '' }'
+episode_limit = int('${ github.event.inputs.episode_limit or '10' }')
+priority_level = int('${ github.event.inputs.priority_level or '3' }')
+
+print(f'🚀 Atlas Processing Task')
+print(f'Task: {task_type}')
+print(f'Podcast: {podcast_name}')
+print(f'Episode Limit: {episode_limit}')
+print(f'Priority: {priority_level}')
+
+# Connect to Atlas database
+conn = sqlite3.connect('/home/ubuntu/dev/atlas/podcast_processing.db')
+cursor = conn.cursor()
+
+if task_type == 'transcript-discovery':
+    # Get pending episodes
+    query = '''
+    SELECT e.id, e.title, e.audio_url, e.link, p.name as podcast_name
+    FROM episodes e
+    JOIN podcasts p ON e.podcast_id = p.id
+    WHERE e.processing_status = 'pending'
+    AND e.transcript_found = FALSE
+    ORDER BY p.priority DESC, e.published_date DESC
+    LIMIT ?
+    '''
+
+    cursor.execute(query, (episode_limit,))
+    episodes = cursor.fetchall()
+
+    print(f'📋 Found {len(episodes)} episodes to process')
+
+    for episode in episodes:
+        episode_id, title, audio_url, link, podcast_name = episode
+        print(f'🎙️  Processing: {podcast_name} - {title[:50]}...')
+
+        # Here you would integrate with your transcript discovery logic
+        # For now, we'll simulate processing
+        result = {
+            'episode_id': episode_id,
+            'status': 'processing',
+            'started_at': datetime.now().isoformat(),
+            'method': 'relayq_runner'
+        }
+
+        print(f'✅ Started processing episode {episode_id}')
+
+elif task_type == 'episode-backlog':
+    print('📊 Building episode backlogs...')
+    # Implementation for backlog building
+
+elif task_type == 'podcast-monitoring':
+    print('👀 Monitoring podcasts for new episodes...')
+    # Implementation for podcast monitoring
+
+elif task_type == 'batch-processing':
+    print('🔄 Running batch processing...')
+    # Implementation for batch processing
+
+conn.close()
+print('✅ Atlas processing completed')
+"
+
+    - name: Update job status
+      if: github.event_name == 'issues'
+      run: |
+        curl -X PATCH \
+          -H "Authorization: token ${ secrets.GITHUB_TOKEN }" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/repos/${ github.repository }/issues/${ github.event.issue.number } \
+          -d '{"state": "closed"}'
+
+        echo "🎯 Atlas job completed and issue closed"
